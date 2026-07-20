@@ -34,6 +34,24 @@ enum Diagnostics {
         let probe = ClaudeProvider.probe()
         print("\n[Claude] oauth credential found: \(probe.foundOAuth)")
         print("  \(probe.detail)")
+        if let id = ClaudeProvider.identity() {
+            print("  email: \(id.email ?? "—")  plan: \(id.plan ?? "—")")
+        }
+        if probe.foundOAuth, let cred = ClaudeProvider.credential() {
+            let sem = DispatchSemaphore(value: 0)
+            Task {
+                defer { sem.signal() }
+                do {
+                    for w in try await ClaudeProvider.fetchUsage(token: cred.accessToken) {
+                        print(String(format: "  %-8@ %5.1f%% used, resets in %@",
+                                     w.label as NSString, w.usedPercent,
+                                     w.resetsInDescription as NSString))
+                    }
+                } catch { print("  usage fetch failed: \(error.localizedDescription)") }
+            }
+            sem.wait()
+        }
+        print("  profiles: \(ClaudeProvider.listProfiles())")
     }
 }
 

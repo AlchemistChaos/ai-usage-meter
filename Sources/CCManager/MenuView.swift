@@ -4,7 +4,7 @@ import ServiceManagement
 struct MenuView: View {
     @ObservedObject var manager: AccountManager
     @State private var importName = ""
-    @State private var showImport = false
+    @State private var importProvider: ProviderKind?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -28,6 +28,22 @@ struct MenuView: View {
                         AccountRow(account: account) { manager.switchTo(account) }
                     }
                 }
+            }
+
+            if manager.claudeNeedsKeychainApproval {
+                HStack(spacing: 8) {
+                    Image(systemName: "key.fill").foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Connect Claude usage")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("One-time keychain approval — choose “Always Allow”")
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Connect") { manager.connectClaude() }.font(.caption)
+                }
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.08)))
             }
 
             if let err = manager.lastError {
@@ -60,7 +76,7 @@ struct MenuView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if showImport {
+            if let provider = importProvider {
                 HStack(spacing: 6) {
                     TextField("profile name", text: $importName)
                         .textFieldStyle(.roundedBorder)
@@ -68,20 +84,23 @@ struct MenuView: View {
                     Button("Save") {
                         let name = importName.trimmingCharacters(in: .whitespaces)
                         guard !name.isEmpty else { return }
-                        manager.importCurrent(.codex, as: name)
+                        manager.importCurrent(provider, as: name)
                         importName = ""
-                        showImport = false
+                        importProvider = nil
                     }
                     .font(.caption)
                 }
-                Text("Saves the Codex account you're logged into right now.")
+                Text("Saves the \(provider.displayName) account you're logged into right now.")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             } else {
-                Button("Import current Codex login…") { showImport = true }
-                    .font(.caption)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.blue)
+                HStack(spacing: 12) {
+                    Button("Import Codex login…") { importProvider = .codex }
+                    Button("Import Claude login…") { importProvider = .claude }
+                }
+                .font(.caption)
+                .buttonStyle(.plain)
+                .foregroundStyle(.blue)
             }
 
             Toggle("Launch at login", isOn: Binding(

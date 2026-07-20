@@ -8,18 +8,29 @@ final class AccountManager: ObservableObject {
     @Published var lastError: String?
 
     private var timer: Timer?
+    /// Claude usage is a real network call — poll at most every 5 minutes.
+    private var lastClaudePoll: Date?
+    private var claudePollInFlight = false
 
     init() {
         try? ProfileStore.ensureDirs()
         refresh()
-        // Codex writes new headers only when you actually use it, so a slow
-        // poll is plenty — this reads a local file, it never hits the network.
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
     }
 
     func refresh() {
+        var result = codexAccounts()
+        result.append(contentsOf: claudeAccounts())
+        accounts = result
+        lastRefresh = Date()
+        pollClaudeUsageIfStale()
+    }
+
+    // MARK: - Codex (local: JWT + sqlite log harvest)
+
+    private func codexAccounts() -> [Account] {
         var result: [Account] = []
 
         // Harvest the newest reading and attribute it to whoever is active now.
@@ -29,7 +40,6 @@ final class AccountManager: ObservableObject {
         }
 
         let activeName = ProfileStore.activeProfileName(.codex)
-        var profiles = ProfileStore.listProfiles(.codex)
 
         // Someone may be logged in without having imported that account yet.
         if activeName == nil, let live = liveIdentity {
@@ -43,10 +53,9 @@ final class AccountManager: ObservableObject {
                 status: SnapshotCache.get(accountID: live.accountID)
                     .map { .live($0.capturedAt) }
                     ?? .noData(reason: "run Codex once to record limits")))
-            profiles = profiles.filter { _ in true }
         }
 
-        for name in profiles {
+        for name in ProfileStore.listProfiles(.codex) {
             let url = ProfileStore.profileFile(.codex, name)
             guard let id = CodexProvider.identity(at: url) else {
                 result.append(Account(
@@ -66,22 +75,130 @@ final class AccountManager: ObservableObject {
                 status: cached.map { .live($0.capturedAt) }
                     ?? .noData(reason: "no reading yet — switch to it and use Codex once")))
         }
-
-        result.append(contentsOf: ClaudeProvider.accounts())
-        accounts = result
-        lastRefresh = Date()
+        return result
     }
+
+    // MARK: - Claude (keychain token + live usage endpoint)
+
+    private func claudeAccounts() -> [Account] {
+        guard let identity = ClaudeProvider.identity() else {
+            return [Account(
+                provider: .claude, profileName: "not-detected",
+                email: nil, plan: nil, isActive: false, windows: [],
+                status: .noData(reason: "no Claude login found in ~/.claude.json"))]
+        }
+
+        var result: [Account] = []
+        let profiles = ClaudeProvider.listProfiles()
+        let activeProfile = profiles.first {
+            ClaudeProvider.storedProfile($0).accountUuid == identity.accountUuid
+        }
+
+        // Current login, shown even before it's been imported as a profile.
+        if activeProfile == nil {
+            result.append(claudeAccount(
+                name: identity.email ?? "current",
+                uuid: identity.accountUuid,
+                email: identity.email, plan: identity.plan, isActive: true))
+        }
+
+        for name in profiles {
+            let stored = ClaudeProvider.storedProfile(name)
+            let isActive = name == activeProfile
+            result.append(claudeAccount(
+                name: name,
+                uuid: stored.accountUuid,
+                email: isActive ? identity.email : stored.email,
+                plan: isActive ? identity.plan : stored.plan,
+                isActive: isActive))
+        }
+        return result
+    }
+
+    private func claudeAccount(
+        name: String, uuid: String?, email: String?, plan: String?, isActive: Bool
+    ) -> Account {
+        let cached = uuid.flatMap { SnapshotCache.get(accountID: "claude:\($0)") }
+        return Account(
+            provider: .claude,
+            profileName: name,
+            email: email,
+            plan: plan,
+            isActive: isActive,
+            windows: cached?.projectedWindows() ?? [],
+            status: cached.map { .live($0.capturedAt) }
+                ?? .noData(reason: isActive ? "fetching usage…" : "no reading yet"))
+    }
+
+    /// True when a Claude login exists but the keychain hasn't been unlocked
+    /// for us yet — the UI offers a Connect button that triggers the (one-time)
+    /// macOS approval dialog at a moment the user expects it.
+    var claudeNeedsKeychainApproval: Bool {
+        ClaudeProvider.identity() != nil && ClaudeProvider.credential() == nil
+    }
+
+    func connectClaude() {
+        // Force a fresh keychain read; macOS shows its password dialog here.
+        // "Always Allow" makes it permanent (the app is Developer-ID signed,
+        // so the grant survives rebuilds).
+        if ClaudeProvider.credential(forceReload: true) != nil {
+            lastError = nil
+            lastClaudePoll = nil
+            refresh()
+        } else {
+            lastError = "Keychain access was not granted"
+        }
+    }
+
+    /// Fetch live Claude usage for the active account, at most every 5 minutes.
+    private func pollClaudeUsageIfStale() {
+        guard !claudePollInFlight,
+              lastClaudePoll.map({ -$0.timeIntervalSinceNow > 300 }) ?? true,
+              let identity = ClaudeProvider.identity(),
+              let cred = ClaudeProvider.credential()
+        else { return }
+
+        if let exp = cred.expiresAt, exp <= Date() {
+            lastError = "Claude token expired — run `claude` once to refresh it"
+            return
+        }
+
+        claudePollInFlight = true
+        let uuid = identity.accountUuid
+        Task { @MainActor in
+            defer { claudePollInFlight = false }
+            do {
+                let windows = try await ClaudeProvider.fetchUsage(token: cred.accessToken)
+                lastClaudePoll = Date()
+                SnapshotCache.put(
+                    accountID: "claude:\(uuid)",
+                    snapshot: .init(windows: windows, plan: cred.subscriptionType,
+                                    capturedAt: Date()))
+                // Rebuild rows without re-triggering the poll.
+                var result = codexAccounts()
+                result.append(contentsOf: claudeAccounts())
+                accounts = result
+            } catch {
+                lastError = "Claude usage fetch failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - Actions
 
     /// The account with the most headroom, among those we have real data for.
     var recommended: Account? {
         accounts
-            .filter { $0.provider == .codex && $0.headroom != nil }
+            .filter { $0.headroom != nil }
             .max { ($0.headroom ?? 0) < ($1.headroom ?? 0) }
     }
 
     func importCurrent(_ provider: ProviderKind, as name: String) {
         do {
-            try ProfileStore.importActive(provider, as: name)
+            switch provider {
+            case .codex: try ProfileStore.importActive(provider, as: name)
+            case .claude: try ClaudeProvider.importActive(as: name)
+            }
             lastError = nil
             refresh()
         } catch {
@@ -91,7 +208,12 @@ final class AccountManager: ObservableObject {
 
     func switchTo(_ account: Account) {
         do {
-            try ProfileStore.activate(account.provider, name: account.profileName)
+            switch account.provider {
+            case .codex: try ProfileStore.activate(.codex, name: account.profileName)
+            case .claude:
+                try ClaudeProvider.activate(name: account.profileName)
+                lastClaudePoll = nil  // re-poll usage for the new account
+            }
             lastError = nil
             refresh()
         } catch {
