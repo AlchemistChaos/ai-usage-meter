@@ -42,7 +42,7 @@ struct MenuView: View {
             footer
         }
         .padding(14)
-        .frame(width: 340)
+        .frame(width: 390)
     }
 
     private var header: some View {
@@ -131,6 +131,21 @@ struct MenuView: View {
                 .font(.caption)
                 .buttonStyle(.plain)
                 .foregroundStyle(.blue)
+            }
+
+            if !manager.todayTokens.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "number.circle")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    Text("Claude today: "
+                         + "\(TokenStats.formatCount(manager.todayTokens.inputTokens)) in · "
+                         + "\(TokenStats.formatCount(manager.todayTokens.outputTokens)) out · "
+                         + "\(TokenStats.formatCount(manager.todayTokens.cacheReadTokens)) cached")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .help("Tokens used today across all Claude Code sessions on this Mac (from local transcripts; not split per account)")
             }
 
             Toggle("Launch at login", isOn: Binding(
@@ -272,10 +287,14 @@ private struct UsageBar: View {
                 .font(.system(size: 10, design: .monospaced))
                 .frame(width: 32, alignment: .trailing)
 
-            Text(window.resetsInDescription)
+            // Countdown plus the actual reset moment, e.g. "2h 9m · 4:39 PM".
+            Text(window.resetsAt == nil
+                 ? "—"
+                 : "\(window.resetsInDescription) · \(window.resetsAtDescription)")
                 .font(.system(size: 9))
                 .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .trailing)
+                .frame(width: 96, alignment: .trailing)
+                .lineLimit(1)
         }
     }
 }

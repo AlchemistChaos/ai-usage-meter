@@ -12,6 +12,11 @@ final class AccountManager: ObservableObject {
     private var lastClaudePoll: Date?
     private var claudePollInFlight = false
 
+    /// Tokens burned today (Claude, machine-wide from local transcripts).
+    @Published private(set) var todayTokens = TokenStats()
+    private var lastTokenScan: Date?
+    private var tokenScanInFlight = false
+
     init() {
         try? ProfileStore.ensureDirs()
         refresh()
@@ -26,6 +31,26 @@ final class AccountManager: ObservableObject {
         accounts = result
         lastRefresh = Date()
         pollClaudeUsageIfStale()
+        scanTokensIfStale()
+    }
+
+    /// Recount today's tokens from transcripts, at most every 2 minutes,
+    /// off the main thread (files can be tens of MB).
+    private func scanTokensIfStale() {
+        guard !tokenScanInFlight,
+              lastTokenScan.map({ -$0.timeIntervalSinceNow > 120 }) ?? true
+        else { return }
+        tokenScanInFlight = true
+        Task.detached(priority: .utility) { [weak self] in
+            let stats = TokenStats.collectToday()
+            await self?.applyTokenStats(stats)
+        }
+    }
+
+    private func applyTokenStats(_ stats: TokenStats) {
+        todayTokens = stats
+        lastTokenScan = Date()
+        tokenScanInFlight = false
     }
 
     // MARK: - Codex (local: JWT + sqlite log harvest)

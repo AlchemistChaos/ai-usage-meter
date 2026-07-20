@@ -38,6 +38,11 @@ enum Diagnostics {
             print("  email: \(id.email ?? "—")  plan: \(id.plan ?? "—")")
         }
         print("  profiles: \(ClaudeProvider.listProfiles())")
+
+        let t = TokenStats.collectToday()
+        print("\n[Tokens today] in: \(TokenStats.formatCount(t.inputTokens))"
+              + "  out: \(TokenStats.formatCount(t.outputTokens))"
+              + "  cacheRead: \(TokenStats.formatCount(t.cacheReadTokens))")
     }
 }
 

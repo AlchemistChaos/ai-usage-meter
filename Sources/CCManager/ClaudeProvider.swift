@@ -66,10 +66,33 @@ enum ClaudeProvider {
                 windowMinutes: minutes, resetsAt: resets)
         }
 
-        return [
+        var windows = [
             window("five_hour", label: "5h", minutes: 300),
             window("seven_day", label: "Weekly", minutes: 10_080),
         ].compactMap { $0 }
+
+        // The `limits` array additionally carries model-scoped caps (e.g. a
+        // per-model weekly limit) that can be critical while the overall
+        // weekly still looks fine — surface those too.
+        if let limits = obj["limits"] as? [[String: Any]] {
+            for l in limits {
+                guard let kind = l["kind"] as? String,
+                      kind != "session", kind != "weekly_all",  // already shown
+                      let percent = l["percent"] as? Double,
+                      let scope = l["scope"] as? [String: Any]
+                else { continue }
+                let model = (scope["model"] as? [String: Any])?["display_name"] as? String
+                let resets = (l["resets_at"] as? String).flatMap { iso.date(from: $0) }
+                let isWeekly = (l["group"] as? String) == "weekly"
+                windows.append(UsageWindow(
+                    label: "\(model ?? kind) \(isWeekly ? "wk" : "")"
+                        .trimmingCharacters(in: .whitespaces),
+                    usedPercent: percent,
+                    windowMinutes: isWeekly ? 10_080 : 300,
+                    resetsAt: resets))
+            }
+        }
+        return windows
     }
 
     // MARK: - Profiles

@@ -23,6 +23,14 @@ struct UsageWindow: Identifiable, Hashable {
         if h > 0 { return "\(h)h \(m)m" }
         return "\(m)m"
     }
+
+    /// Absolute reset moment — "4:39 PM" if today, else "Jul 25, 6:59 PM".
+    var resetsAtDescription: String {
+        guard let resetsAt else { return "" }
+        let fmt = DateFormatter()
+        fmt.dateFormat = Calendar.current.isDateInToday(resetsAt) ? "h:mm a" : "MMM d, h:mm a"
+        return fmt.string(from: resetsAt)
+    }
 }
 
 enum ProviderKind: String, Codable, CaseIterable {
