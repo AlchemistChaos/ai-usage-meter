@@ -18,58 +18,24 @@ import Foundation
 /// rest of the app treats Claude exactly like Codex.
 enum ClaudeProvider {
 
-    static let keychainServices = [
-        "Claude Code-credentials",
-        "Claude Code-credentials-ef2e7502",
-        "Claude Code-credentials-f2877ae3",
-    ]
-
     struct Probe {
         let foundOAuth: Bool
         let detail: String
     }
 
-    /// Silent probe used by the refresh loop. Only checks the file-based
-    /// credential path — reading the keychain entries triggers a macOS
-    /// password dialog on every access, which is unacceptable on a 30s timer.
-    /// Use `probe(includeKeychain: true)` (the --diagnose path) for the full check.
-    static func probe(includeKeychain: Bool = false) -> Probe {
-        // File-based credential path some installs use; no prompt to read.
+    /// Check for a file-based subscription credential. Deliberately never reads
+    /// the keychain: every third-party keychain access pops a macOS password
+    /// dialog, and the entries were verified to hold only MCP tokens anyway.
+    static func probe() -> Probe {
         let fileURL = ProfileStore.activeCredentialPath(.claude)
         if let data = try? Data(contentsOf: fileURL),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            obj["claudeAiOauth"] != nil {
             return Probe(foundOAuth: true, detail: "OAuth credential found at ~/.claude/.credentials.json")
         }
-        if includeKeychain {
-            for service in keychainServices {
-                guard let json = readKeychain(service: service),
-                      let obj = try? JSONSerialization.jsonObject(with: json) as? [String: Any]
-                else { continue }
-                if obj["claudeAiOauth"] != nil {
-                    return Probe(foundOAuth: true, detail: "OAuth credential found in \(service)")
-                }
-            }
-            return Probe(
-                foundOAuth: false,
-                detail: "No subscription token found — only MCP tokens are present")
-        }
         return Probe(
             foundOAuth: false,
             detail: "No file-based credential; run `claude` login in a terminal to create one")
-    }
-
-    /// Read a generic password entry from the login keychain.
-    private static func readKeychain(service: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else { return nil }
-        return item as? Data
     }
 
     /// Accounts we can describe today. Until a credential is readable this is a

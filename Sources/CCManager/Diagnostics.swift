@@ -31,7 +31,7 @@ enum Diagnostics {
         print("\n[Codex] saved profiles: \(ProfileStore.listProfiles(.codex))")
         print("  active profile: \(ProfileStore.activeProfileName(.codex) ?? "none imported")")
 
-        let probe = ClaudeProvider.probe(includeKeychain: true)
+        let probe = ClaudeProvider.probe()
         print("\n[Claude] oauth credential found: \(probe.foundOAuth)")
         print("  \(probe.detail)")
     }
