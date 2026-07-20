@@ -1,8 +1,19 @@
 import SwiftUI
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var notch: NotchController?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        Task { @MainActor in
+            notch = NotchController(manager: AccountManager.shared)
+        }
+    }
+}
+
 @main
 struct CCManagerApp: App {
-    @StateObject private var manager = AccountManager()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    @StateObject private var manager = AccountManager.shared
 
     init() {
         // `CCManager --diagnose` prints what the app can actually read and exits.

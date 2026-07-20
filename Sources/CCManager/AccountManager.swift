@@ -3,6 +3,8 @@ import SwiftUI
 
 @MainActor
 final class AccountManager: ObservableObject {
+    /// One instance shared by the menu bar scene and the notch panel.
+    static let shared = AccountManager()
     @Published private(set) var accounts: [Account] = []
     @Published private(set) var lastRefresh: Date?
     @Published var lastError: String?
