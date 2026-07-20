@@ -8,17 +8,21 @@ import SwiftUI
 /// invisible parts never steal clicks from the menu bar.
 @MainActor
 final class NotchController {
-    /// Collapsed, the panel matches the physical notch height so it disappears
-    /// into it; the small extra width leaves room for two subtle status dots.
-    static var collapsedHeight: CGFloat {
+    /// The hardware notch height — the ambient state matches it exactly.
+    static var notchHeight: CGFloat {
         max(NSScreen.main?.safeAreaInsets.top ?? 32, 24)
     }
-    static let expandedSize = CGSize(width: 480, height: 400)
-    static let wingWidth: CGFloat = 18
+    static let expandedSize = CGSize(width: 470, height: 580)
 
     private let panel: NSPanel
     private let manager: AccountManager
-    private var expanded = false
+    private var state: NotchState = {
+        switch ProcessInfo.processInfo.environment["CCM_NOTCH_STATE"] {
+        case "full": return .full
+        case "glance": return .glance
+        default: return .ambient
+        }
+    }()
 
     init(manager: AccountManager) {
         self.manager = manager
@@ -39,8 +43,8 @@ final class NotchController {
         let root = NotchView(
             manager: manager,
             notchWidth: Self.notchWidth(),
-            onExpandChange: { [weak self] expanded in
-                self?.setExpanded(expanded)
+            onStateChange: { [weak self] state, height in
+                self?.setState(state, height: height)
             })
         let hosting = NSHostingView(rootView: root)
         hosting.frame = NSRect(origin: .zero, size: Self.expandedSize)
@@ -69,18 +73,19 @@ final class NotchController {
         return 180
     }
 
-    private func setExpanded(_ value: Bool) {
-        guard value != expanded else { return }
-        expanded = value
+    private var panelHeight: CGFloat = 0
+
+    private func setState(_ value: NotchState, height: CGFloat) {
+        guard value != state || height != panelHeight else { return }
+        state = value
+        panelHeight = height
         layout()
     }
 
     private func layout() {
         guard let screen = NSScreen.main else { return }
-        let size: CGSize = expanded
-            ? Self.expandedSize
-            : CGSize(width: Self.notchWidth() + Self.wingWidth * 2,
-                     height: Self.collapsedHeight)
+        var size = state.size
+        if size.height <= 0 { size.height = max(panelHeight, 200) }
         let frame = NSRect(
             x: screen.frame.midX - Self.expandedSize.width / 2,
             y: screen.frame.maxY - size.height,
