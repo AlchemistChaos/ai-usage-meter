@@ -24,7 +24,7 @@ jobs:
       - name: Check signing secrets
         id: secrets
         run: |
-          if [[ -n "${{ secrets.MACOS_CERTIFICATE }}" ]]; then
+          if [[ -n "${{ secrets.CSC_LINK }}" ]]; then
             echo "signing=true" >> "$GITHUB_OUTPUT"
           else
             echo "signing=false" >> "$GITHUB_OUTPUT"
@@ -34,8 +34,8 @@ jobs:
       - name: Import Developer ID certificate
         if: steps.secrets.outputs.signing == 'true'
         env:
-          CERT: ${{ secrets.MACOS_CERTIFICATE }}
-          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          CERT: ${{ secrets.CSC_LINK }}
+          CERT_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ github.run_id }}
         run: |
           echo "$CERT" | base64 --decode > /tmp/cert.p12
@@ -66,19 +66,19 @@ jobs:
       - name: Notarize and staple
         if: steps.secrets.outputs.signing == 'true'
         env:
-          KEY: ${{ secrets.APPLE_API_KEY }}
-          KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           DMG="dist/NotchLimits-${{ steps.v.outputs.version }}.dmg"
           # Sign the DMG itself so the staple sticks to the download.
           codesign --force --sign "$CCM_SIGN_IDENTITY" --timestamp "$DMG"
-          echo "$KEY" | base64 --decode > /tmp/api_key.p8
           xcrun notarytool submit "$DMG" \
-            --key /tmp/api_key.p8 --key-id "$KEY_ID" --issuer "$ISSUER_ID" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
             --wait --timeout 30m
           xcrun stapler staple "$DMG"
-          rm /tmp/api_key.p8
           spctl -a -vv -t install "$DMG" || true
 
       - name: Checksum

@@ -36,6 +36,41 @@ That builds the app, installs it to `/Applications`, and launches it. A locally-
 
 > **Homebrew** (`brew install --cask …`) lands with the first notarized release — see [Releases](../../releases).
 
+<details>
+<summary><b>Maintainers: publishing a signed release</b></summary>
+
+Signed, notarized DMGs need five GitHub secrets. Configure them in one pass:
+
+```bash
+./scripts/setup-signing.sh
+```
+
+It reads your Developer ID from the keychain, exports and uploads the
+certificate, and prompts for your Apple ID and an app-specific password
+(generate one at [appleid.apple.com](https://appleid.apple.com) → Sign-In and
+Security → App-Specific Passwords). Nothing is echoed or left on disk.
+
+| Secret | Source |
+|---|---|
+| `CSC_LINK` | Developer ID cert, base64 `.p12` — set by the script |
+| `CSC_KEY_PASSWORD` | Password you choose during export |
+| `APPLE_TEAM_ID` | Read from the certificate |
+| `APPLE_ID` | Apple Developer account email |
+| `APPLE_APP_SPECIFIC_PASSWORD` | appleid.apple.com |
+
+To set one by hand instead: `gh secret set APPLE_ID` — or use the web UI at
+**Settings → Secrets and variables → Actions → New repository secret**.
+
+Then tag to publish:
+
+```bash
+git tag v0.1.0 && git push --tags
+```
+
+Without these the workflow still builds a DMG; it just isn't Gatekeeper-clean.
+
+</details>
+
 ## Adding accounts
 
 **Claude** — click the menu bar icon → **Add Claude account…** → pick a browser → sign in and authorize. The app runs the same PKCE OAuth flow `claude login` uses and catches the redirect on `localhost:54545`. Repeat per account.
