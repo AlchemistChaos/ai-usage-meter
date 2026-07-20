@@ -179,10 +179,29 @@ final class AccountManager: ObservableObject {
     @Published var pendingClaudeLogin: ClaudeOAuth.PendingLogin?
     private var callbackServer: ClaudeOAuth.CallbackServer?
 
-    /// Open the browser on Claude's OAuth consent page — the same flow as
-    /// `claude login`: a localhost listener catches the redirect automatically.
-    /// If the port is taken we fall back to the paste-a-code variant.
-    func beginClaudeLogin() {
+    /// Browsers installed on this Mac that can open the login page. Each
+    /// browser has its own cookie jar, so signing in from different browsers
+    /// lets you add several Claude accounts without logging anything out.
+    struct Browser: Identifiable, Hashable {
+        let name: String
+        let appURL: URL
+        var id: URL { appURL }
+    }
+
+    var availableBrowsers: [Browser] {
+        let handlers = NSWorkspace.shared.urlsForApplications(
+            toOpen: URL(string: "https://claude.ai")!)
+        return handlers.compactMap { url in
+            let name = (url.deletingPathExtension().lastPathComponent)
+            return Browser(name: name, appURL: url)
+        }
+        .sorted { $0.name < $1.name }
+    }
+
+    /// Open the chosen browser on Claude's OAuth consent page — the same flow
+    /// as `claude login`: a localhost listener catches the redirect
+    /// automatically. If the port is taken we fall back to the paste variant.
+    func beginClaudeLogin(browser: Browser? = nil) {
         callbackServer?.stop()
         callbackServer = ClaudeOAuth.CallbackServer { [weak self] code, state in
             Task { @MainActor in
@@ -191,7 +210,13 @@ final class AccountManager: ObservableObject {
         }
         let login = ClaudeOAuth.begin(usesCallback: callbackServer != nil)
         pendingClaudeLogin = login
-        NSWorkspace.shared.open(login.url)
+        if let browser {
+            NSWorkspace.shared.open(
+                [login.url], withApplicationAt: browser.appURL,
+                configuration: NSWorkspace.OpenConfiguration())
+        } else {
+            NSWorkspace.shared.open(login.url)
+        }
     }
 
     /// Complete the login with the "code#state" string the user pasted.

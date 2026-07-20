@@ -115,7 +115,17 @@ struct MenuView: View {
                     .foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 12) {
-                    Button("Add Claude account…") { manager.beginClaudeLogin() }
+                    Menu("Add Claude account…") {
+                        Button("Default browser") { manager.beginClaudeLogin() }
+                        Divider()
+                        // One login session per browser — use a different
+                        // browser for each additional Claude account.
+                        ForEach(manager.availableBrowsers) { browser in
+                            Button(browser.name) { manager.beginClaudeLogin(browser: browser) }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                     Button("Import Codex login…") { importProvider = .codex }
                 }
                 .font(.caption)
