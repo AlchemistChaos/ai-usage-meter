@@ -72,7 +72,7 @@ final class NotchController {
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.layout() }
+            Task { @MainActor [weak self] in self?.layout() }
         }
     }
 

@@ -24,7 +24,7 @@ final class AccountManager: ObservableObject {
         try? ProfileStore.ensureDirs()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor [weak self] in self?.refresh() }
         }
     }
 
