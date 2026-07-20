@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Network
 
 /// The OAuth login flow Claude Code itself uses (PKCE, code-paste variant):
 /// open claude.ai/oauth/authorize in the browser, the user approves and gets a
@@ -9,17 +10,24 @@ import CryptoKit
 enum ClaudeOAuth {
 
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-    static let redirectURI = "https://console.anthropic.com/oauth/code/callback"
+    /// Claude Code's registered loopback redirect — same one `claude login` uses.
+    static let callbackPort: UInt16 = 54545
+    static var redirectURI: String { "http://localhost:\(callbackPort)/callback" }
+    /// Paste-flow redirect, kept as fallback if the local port is taken.
+    static let pasteRedirectURI = "https://console.anthropic.com/oauth/code/callback"
     static let scopes = "org:create_api_key user:profile user:inference"
 
     struct PendingLogin {
         let url: URL
         let verifier: String
         let state: String
+        /// True when a localhost listener is waiting for the redirect;
+        /// false means the user must paste the code manually.
+        let usesCallback: Bool
     }
 
     /// Build the authorize URL with a fresh PKCE pair.
-    static func begin() -> PendingLogin {
+    static func begin(usesCallback: Bool) -> PendingLogin {
         let verifier = randomURLSafe(64)
         let state = randomURLSafe(32)
         let challenge = Data(SHA256.hash(data: Data(verifier.utf8)))
@@ -29,17 +37,78 @@ enum ClaudeOAuth {
             .replacingOccurrences(of: "=", with: "")
 
         var c = URLComponents(string: "https://claude.ai/oauth/authorize")!
-        c.queryItems = [
-            .init(name: "code", value: "true"),  // code-paste flow, no local server
+        var items: [URLQueryItem] = [
             .init(name: "client_id", value: clientID),
             .init(name: "response_type", value: "code"),
-            .init(name: "redirect_uri", value: redirectURI),
+            .init(name: "redirect_uri", value: usesCallback ? redirectURI : pasteRedirectURI),
             .init(name: "scope", value: scopes),
             .init(name: "code_challenge", value: challenge),
             .init(name: "code_challenge_method", value: "S256"),
             .init(name: "state", value: state),
         ]
-        return PendingLogin(url: c.url!, verifier: verifier, state: state)
+        if !usesCallback { items.insert(.init(name: "code", value: "true"), at: 0) }
+        c.queryItems = items
+        return PendingLogin(url: c.url!, verifier: verifier, state: state,
+                            usesCallback: usesCallback)
+    }
+
+    // MARK: - Loopback callback server (the `claude login` experience)
+
+    /// Minimal one-shot HTTP listener that waits for the OAuth redirect,
+    /// hands back code+state, and shows a "you can close this tab" page.
+    final class CallbackServer {
+        private var listener: NWListener?
+        private var connections: [NWConnection] = []
+        private let onCode: (String, String) -> Void
+
+        init?(onCode: @escaping (String, String) -> Void) {
+            self.onCode = onCode
+            guard let port = NWEndpoint.Port(rawValue: callbackPort),
+                  let l = try? NWListener(using: .tcp, on: port) else { return nil }
+            listener = l
+            l.newConnectionHandler = { [weak self] conn in self?.handle(conn) }
+            l.start(queue: .main)
+        }
+
+        private func handle(_ conn: NWConnection) {
+            connections.append(conn)
+            conn.start(queue: .main)
+            conn.receive(minimumIncompleteLength: 1, maximumLength: 16 * 1024) {
+                [weak self] data, _, _, _ in
+                guard let self, let data,
+                      let request = String(data: data, encoding: .utf8) else { return }
+                self.respond(conn, request: request)
+            }
+        }
+
+        private func respond(_ conn: NWConnection, request: String) {
+            // "GET /callback?code=...&state=... HTTP/1.1"
+            var found: (code: String, state: String)?
+            if let path = request.split(separator: " ").dropFirst().first,
+               path.hasPrefix("/callback"),
+               let comps = URLComponents(string: String(path)) {
+                let q = { (n: String) in comps.queryItems?.first { $0.name == n }?.value }
+                if let code = q("code") { found = (code, q("state") ?? "") }
+            }
+
+            let body = found != nil
+                ? "<h2>Signed in ✓</h2><p>You can close this tab and return to the menu bar app.</p>"
+                : "<h2>Waiting for login…</h2>"
+            let resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n"
+                + "<html><body style='font-family:-apple-system;text-align:center;padding-top:80px'>"
+                + body + "</body></html>"
+            conn.send(content: Data(resp.utf8), completion: .contentProcessed { _ in
+                conn.cancel()
+            })
+            if let f = found { onCode(f.code, f.state) }
+        }
+
+        func stop() {
+            listener?.cancel()
+            listener = nil
+            connections.forEach { $0.cancel() }
+            connections.removeAll()
+        }
     }
 
     struct TokenSet {
@@ -66,7 +135,7 @@ enum ClaudeOAuth {
             "code": code,
             "state": state,
             "client_id": clientID,
-            "redirect_uri": redirectURI,
+            "redirect_uri": login.usesCallback ? redirectURI : pasteRedirectURI,
             "code_verifier": login.verifier,
         ])
         let (data, resp) = try await URLSession.shared.data(for: req)

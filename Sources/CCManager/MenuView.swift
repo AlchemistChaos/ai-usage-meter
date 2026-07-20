@@ -61,27 +61,39 @@ struct MenuView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if manager.pendingClaudeLogin != nil {
+            if let pending = manager.pendingClaudeLogin {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Approve in the browser, then paste the code:")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 6) {
-                        TextField("code#state", text: $loginCode)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11, design: .monospaced))
-                        Button("Add") {
-                            let code = loginCode.trimmingCharacters(in: .whitespacesAndNewlines)
-                            guard !code.isEmpty else { return }
-                            manager.completeClaudeLogin(pasted: code)
-                            loginCode = ""
+                    if pending.usesCallback {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Waiting for you to sign in in the browser…")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Cancel") { manager.cancelClaudeLogin() }
+                                .font(.caption)
                         }
-                        .font(.caption)
-                        Button("Cancel") {
-                            manager.cancelClaudeLogin()
-                            loginCode = ""
+                    } else {
+                        Text("Approve in the browser, then paste the code:")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            TextField("code#state", text: $loginCode)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 11, design: .monospaced))
+                            Button("Add") {
+                                let code = loginCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !code.isEmpty else { return }
+                                manager.completeClaudeLogin(pasted: code)
+                                loginCode = ""
+                            }
+                            .font(.caption)
+                            Button("Cancel") {
+                                manager.cancelClaudeLogin()
+                                loginCode = ""
+                            }
+                            .font(.caption)
                         }
-                        .font(.caption)
                     }
                 }
             } else if let provider = importProvider {

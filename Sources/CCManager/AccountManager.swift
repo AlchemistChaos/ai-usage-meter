@@ -175,10 +175,19 @@ final class AccountManager: ObservableObject {
     // MARK: - Claude login flow (add account without touching the CLI)
 
     @Published var pendingClaudeLogin: ClaudeOAuth.PendingLogin?
+    private var callbackServer: ClaudeOAuth.CallbackServer?
 
-    /// Open the browser on Claude's OAuth consent page.
+    /// Open the browser on Claude's OAuth consent page — the same flow as
+    /// `claude login`: a localhost listener catches the redirect automatically.
+    /// If the port is taken we fall back to the paste-a-code variant.
     func beginClaudeLogin() {
-        let login = ClaudeOAuth.begin()
+        callbackServer?.stop()
+        callbackServer = ClaudeOAuth.CallbackServer { [weak self] code, state in
+            Task { @MainActor in
+                self?.completeClaudeLogin(pasted: "\(code)#\(state)")
+            }
+        }
+        let login = ClaudeOAuth.begin(usesCallback: callbackServer != nil)
         pendingClaudeLogin = login
         NSWorkspace.shared.open(login.url)
     }
@@ -194,6 +203,8 @@ final class AccountManager: ObservableObject {
                     ?? String(profile.accountUuid.prefix(8))
                 try ClaudeOAuth.saveProfile(name: name, tokens: tokens, profile: profile)
                 pendingClaudeLogin = nil
+                callbackServer?.stop()
+                callbackServer = nil
                 lastError = nil
                 lastClaudePoll = nil  // pull limits for the new account now
                 refresh()
@@ -203,7 +214,11 @@ final class AccountManager: ObservableObject {
         }
     }
 
-    func cancelClaudeLogin() { pendingClaudeLogin = nil }
+    func cancelClaudeLogin() {
+        pendingClaudeLogin = nil
+        callbackServer?.stop()
+        callbackServer = nil
+    }
 
     // MARK: - Actions
 
