@@ -5,6 +5,7 @@ struct MenuView: View {
     @ObservedObject var manager: AccountManager
     @State private var importName = ""
     @State private var importProvider: ProviderKind?
+    @State private var loginCode = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -76,7 +77,30 @@ struct MenuView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let provider = importProvider {
+            if manager.pendingClaudeLogin != nil {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Approve in the browser, then paste the code:")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        TextField("code#state", text: $loginCode)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11, design: .monospaced))
+                        Button("Add") {
+                            let code = loginCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !code.isEmpty else { return }
+                            manager.completeClaudeLogin(pasted: code)
+                            loginCode = ""
+                        }
+                        .font(.caption)
+                        Button("Cancel") {
+                            manager.cancelClaudeLogin()
+                            loginCode = ""
+                        }
+                        .font(.caption)
+                    }
+                }
+            } else if let provider = importProvider {
                 HStack(spacing: 6) {
                     TextField("profile name", text: $importName)
                         .textFieldStyle(.roundedBorder)
@@ -95,8 +119,8 @@ struct MenuView: View {
                     .foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 12) {
+                    Button("Add Claude account…") { manager.beginClaudeLogin() }
                     Button("Import Codex login…") { importProvider = .codex }
-                    Button("Import Claude login…") { importProvider = .claude }
                 }
                 .font(.caption)
                 .buttonStyle(.plain)

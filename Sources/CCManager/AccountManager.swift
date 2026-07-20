@@ -150,39 +150,99 @@ final class AccountManager: ObservableObject {
         }
     }
 
-    /// Fetch live Claude usage for the active account, at most every 5 minutes.
+    /// Fetch live usage for EVERY Claude account we have a token for — each
+    /// stored profile carries its own OAuth token (auto-refreshed when expired),
+    /// so all accounts' limits stay visible, not just the active one.
     private func pollClaudeUsageIfStale() {
         guard !claudePollInFlight,
-              lastClaudePoll.map({ -$0.timeIntervalSinceNow > 300 }) ?? true,
-              let identity = ClaudeProvider.identity(),
-              let cred = ClaudeProvider.credential()
+              lastClaudePoll.map({ -$0.timeIntervalSinceNow > 300 }) ?? true
         else { return }
 
-        if let exp = cred.expiresAt, exp <= Date() {
-            lastError = "Claude token expired — run `claude` once to refresh it"
-            return
-        }
+        // Active login via keychain (covers an account not yet saved as a profile).
+        let keychainJob: (uuid: String, token: String, plan: String?)? = {
+            guard let identity = ClaudeProvider.identity(),
+                  let cred = ClaudeProvider.credential(),
+                  cred.expiresAt.map({ $0 > Date() }) ?? true
+            else { return nil }
+            return (identity.accountUuid, cred.accessToken, cred.subscriptionType)
+        }()
+
+        let profiles = ClaudeProvider.listProfiles()
+        guard keychainJob != nil || !profiles.isEmpty else { return }
 
         claudePollInFlight = true
-        let uuid = identity.accountUuid
         Task { @MainActor in
             defer { claudePollInFlight = false }
+            var polled = Set<String>()
+            var failures: [String] = []
+
+            if let job = keychainJob {
+                do {
+                    let windows = try await ClaudeProvider.fetchUsage(token: job.token)
+                    SnapshotCache.put(
+                        accountID: "claude:\(job.uuid)",
+                        snapshot: .init(windows: windows, plan: job.plan, capturedAt: Date()))
+                    polled.insert(job.uuid)
+                } catch { failures.append("active: \(error.localizedDescription)") }
+            }
+
+            for name in profiles {
+                // Skip profiles that are the same account we already polled.
+                if let uuid = ClaudeProvider.profileToken(name)?.accountUuid,
+                   polled.contains(uuid) { continue }
+                do {
+                    let tok = try await ClaudeProvider.freshToken(for: name)
+                    let windows = try await ClaudeProvider.fetchUsage(token: tok.accessToken)
+                    if let uuid = tok.accountUuid {
+                        SnapshotCache.put(
+                            accountID: "claude:\(uuid)",
+                            snapshot: .init(windows: windows, plan: nil, capturedAt: Date()))
+                        polled.insert(uuid)
+                    }
+                } catch { failures.append("\(name): \(error.localizedDescription)") }
+            }
+
+            lastClaudePoll = Date()
+            lastError = failures.isEmpty ? nil : failures.joined(separator: " · ")
+            // Rebuild rows without re-triggering the poll.
+            var result = codexAccounts()
+            result.append(contentsOf: claudeAccounts())
+            accounts = result
+        }
+    }
+
+    // MARK: - Claude login flow (add account without touching the CLI)
+
+    @Published var pendingClaudeLogin: ClaudeOAuth.PendingLogin?
+
+    /// Open the browser on Claude's OAuth consent page.
+    func beginClaudeLogin() {
+        let login = ClaudeOAuth.begin()
+        pendingClaudeLogin = login
+        NSWorkspace.shared.open(login.url)
+    }
+
+    /// Complete the login with the "code#state" string the user pasted.
+    func completeClaudeLogin(pasted: String) {
+        guard let login = pendingClaudeLogin else { return }
+        Task { @MainActor in
             do {
-                let windows = try await ClaudeProvider.fetchUsage(token: cred.accessToken)
-                lastClaudePoll = Date()
-                SnapshotCache.put(
-                    accountID: "claude:\(uuid)",
-                    snapshot: .init(windows: windows, plan: cred.subscriptionType,
-                                    capturedAt: Date()))
-                // Rebuild rows without re-triggering the poll.
-                var result = codexAccounts()
-                result.append(contentsOf: claudeAccounts())
-                accounts = result
+                let tokens = try await ClaudeOAuth.exchange(pasted: pasted, login: login)
+                let profile = try await ClaudeOAuth.fetchProfile(token: tokens.accessToken)
+                let name = profile.email?.split(separator: "@").first.map(String.init)
+                    ?? String(profile.accountUuid.prefix(8))
+                try ClaudeOAuth.saveProfile(name: name, tokens: tokens, profile: profile)
+                pendingClaudeLogin = nil
+                lastError = nil
+                lastClaudePoll = nil  // pull limits for the new account now
+                refresh()
             } catch {
-                lastError = "Claude usage fetch failed: \(error.localizedDescription)"
+                lastError = error.localizedDescription
             }
         }
     }
+
+    func cancelClaudeLogin() { pendingClaudeLogin = nil }
 
     // MARK: - Actions
 
