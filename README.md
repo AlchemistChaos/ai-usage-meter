@@ -73,11 +73,13 @@ Without these the workflow still builds a DMG; it just isn't Gatekeeper-clean.
 
 ## Adding accounts
 
-**Claude** — click the menu bar icon → **Add Claude account…** → pick a browser → sign in and authorize. The app runs the same PKCE OAuth flow `claude login` uses and catches the redirect on `localhost:54545`. Repeat per account.
+Hover the notch to open it, then click **⊕ Add account** in the bottom-right. (The same options live in the menu bar panel.)
 
-> Each browser holds its own cookie session, which is why the menu lets you choose one: sign in to account A in Safari, account B in Chrome, and nothing gets logged out. A private window works too.
+**Claude** — choose a browser from the menu, sign in, and authorize. The app runs the same PKCE OAuth flow `claude login` uses and catches the redirect on `localhost:54545` — nothing to copy or paste. The account appears with its limits within seconds.
 
-**Codex** — log in with `codex login`, then **Import Codex login…** and give it a name. Repeat per account; switch between them from the panel.
+> Each browser keeps its own cookie session, which is why you pick one: sign in to account A in Safari, account B in Chrome, and nothing gets logged out. A private window works too.
+
+**Codex** — sign in with `codex login` in a terminal, then choose **Import current CLI login**. The profile is named automatically from the account's email. Repeat per account; switch between them from the panel.
 
 ## Security & privacy
 

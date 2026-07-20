@@ -291,6 +291,19 @@ final class AccountManager: ObservableObject {
             .max { ($0.headroom ?? 0) < ($1.headroom ?? 0) }
     }
 
+    /// Import whatever Codex account is currently logged in, naming the profile
+    /// after its email automatically — no reason to make anyone type a name we
+    /// can already read out of the token.
+    func importCurrentCodex() {
+        guard let id = CodexProvider.identity(at: ProfileStore.activeCredentialPath(.codex)) else {
+            lastError = "No Codex login found — run `codex login` first"
+            return
+        }
+        let name = id.email?.split(separator: "@").first.map(String.init)
+            ?? String(id.accountID.prefix(8))
+        importCurrent(.codex, as: name)
+    }
+
     func importCurrent(_ provider: ProviderKind, as name: String) {
         do {
             switch provider {

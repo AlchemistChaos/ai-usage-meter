@@ -116,12 +116,16 @@ struct NotchView: View {
                 hoverTask = Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 320_000_000)
                     guard !Task.isCancelled else { return }
+                    // Stay open while a sign-in is in flight, so the flow
+                    // doesn't disappear the moment the pointer leaves.
+                    guard manager.pendingClaudeLogin == nil else { return }
                     advance(to: .ambient)
                 }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .ccmCollapse)) { _ in
-            guard ProcessInfo.processInfo.environment["CCM_NOTCH_STATE"] == nil else { return }
+            guard ProcessInfo.processInfo.environment["CCM_NOTCH_STATE"] == nil,
+                  manager.pendingClaudeLogin == nil else { return }
             hoverTask?.cancel()
             advance(to: .ambient)
         }
@@ -283,10 +287,13 @@ private struct FullDashboard: View {
                     .staggered(i + 1, appeared)
             }
 
-            if !manager.todayTokens.isEmpty {
-                tokensFooter
-                    .staggered(visible.count + 1, appeared)
+            if visible.isEmpty {
+                emptyState
+                    .staggered(1, appeared)
             }
+
+            footer(rowCount: visible.count)
+                .staggered(visible.count + 1, appeared)
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
@@ -320,22 +327,125 @@ private struct FullDashboard: View {
             .fill(.white.opacity(0.055)))
     }
 
-    private var tokensFooter: some View {
-        HStack(spacing: 5) {
-            Text("TODAY")
-                .font(.system(size: 7.5, weight: .bold))
-                .foregroundStyle(Ink.tertiary)
-                .kerning(1.1)
-            Text("\(TokenStats.formatCount(manager.todayTokens.inputTokens)) in · "
-                 + "\(TokenStats.formatCount(manager.todayTokens.outputTokens)) out · "
-                 + "\(TokenStats.formatCount(manager.todayTokens.cacheReadTokens)) cached")
-                .font(.system(size: 10, design: .rounded))
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("No accounts yet")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Ink.primary)
+            Text("Add a Claude or Codex account below to see its limits here.")
+                .font(.system(size: 10))
                 .foregroundStyle(Ink.secondary)
-                .monospacedDigit()
-            Spacer()
         }
-        .padding(.horizontal, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12).padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .fill(.white.opacity(0.035)))
     }
+
+    /// Account management lives here so the notch is self-sufficient — no
+    /// hunting for the menu bar icon to add an account.
+    @ViewBuilder
+    private func footer(rowCount: Int) -> some View {
+        if manager.pendingClaudeLogin != nil {
+            HStack(spacing: 7) {
+                ProgressView().controlSize(.small)
+                Text("Waiting for browser sign-in…")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Ink.secondary)
+                Spacer()
+                Button("Cancel") { manager.cancelClaudeLogin() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Ink.secondary)
+            }
+            .padding(.horizontal, 2)
+        } else {
+            HStack(spacing: 5) {
+                if !manager.todayTokens.isEmpty {
+                    Text("TODAY")
+                        .font(.system(size: 7.5, weight: .bold))
+                        .foregroundStyle(Ink.tertiary)
+                        .kerning(1.1)
+                    Text("\(TokenStats.formatCount(manager.todayTokens.inputTokens)) in · "
+                         + "\(TokenStats.formatCount(manager.todayTokens.outputTokens)) out")
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundStyle(Ink.secondary)
+                        .monospacedDigit()
+                }
+                Spacer()
+                AddAccountMenu(manager: manager)
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+}
+
+/// "+ Add account" — Claude opens a browser OAuth flow (one login per browser,
+/// so several accounts can be added without logging anything out); Codex
+/// imports whatever the CLI is currently signed into.
+private struct AddAccountMenu: View {
+    @ObservedObject var manager: AccountManager
+
+    @State private var hovering = false
+
+    var body: some View {
+        // A SwiftUI Menu renders with system control chrome that is invisible
+        // against the notch's black, so the menu is built and popped manually.
+        HStack(spacing: 3) {
+            Image(systemName: "plus.circle.fill")
+                .font(.system(size: 9))
+                .foregroundColor(hovering ? .white : .white.opacity(0.55))
+            Text("Add account")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(hovering ? .white : .white.opacity(0.55))
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Capsule().fill(.white.opacity(hovering ? 0.12 : 0.06)))
+        .contentShape(Capsule())
+        .onHover { hovering = $0 }
+        .onTapGesture { present() }
+    }
+
+    private func present() {
+        let menu = NSMenu()
+
+        let claudeHeader = NSMenuItem(title: "Claude — sign in with", action: nil, keyEquivalent: "")
+        claudeHeader.isEnabled = false
+        menu.addItem(claudeHeader)
+        menu.addItem(item("   Default browser") { manager.beginClaudeLogin() })
+        for browser in manager.availableBrowsers {
+            menu.addItem(item("   \(browser.name)") { manager.beginClaudeLogin(browser: browser) })
+        }
+
+        menu.addItem(.separator())
+        let codexHeader = NSMenuItem(title: "Codex", action: nil, keyEquivalent: "")
+        codexHeader.isEnabled = false
+        menu.addItem(codexHeader)
+        menu.addItem(item("   Import current CLI login") { manager.importCurrentCodex() })
+
+        // Pop at the mouse, in the notch panel's window.
+        if let window = NSApp.windows.first(where: { $0.isVisible && $0 is NSPanel }) {
+            let location = window.mouseLocationOutsideOfEventStream
+            menu.popUp(positioning: nil, at: location, in: window.contentView)
+        } else {
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        }
+    }
+
+    private func item(_ title: String, _ action: @escaping () -> Void) -> NSMenuItem {
+        let it = NSMenuItem(title: title, action: #selector(MenuAction.fire(_:)), keyEquivalent: "")
+        let target = MenuAction(action)
+        it.target = target
+        it.representedObject = target   // keep the target alive
+        return it
+    }
+}
+
+/// Bridges an NSMenuItem selector back to a Swift closure.
+private final class MenuAction: NSObject {
+    private let action: () -> Void
+    init(_ action: @escaping () -> Void) { self.action = action }
+    @objc func fire(_ sender: Any?) { action() }
 }
 
 private struct AccountCard: View {

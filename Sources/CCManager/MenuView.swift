@@ -3,8 +3,6 @@ import ServiceManagement
 
 struct MenuView: View {
     @ObservedObject var manager: AccountManager
-    @State private var importName = ""
-    @State private var importProvider: ProviderKind?
     @State private var loginCode = ""
 
     var body: some View {
@@ -96,23 +94,6 @@ struct MenuView: View {
                         }
                     }
                 }
-            } else if let provider = importProvider {
-                HStack(spacing: 6) {
-                    TextField("profile name", text: $importName)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.caption)
-                    Button("Save") {
-                        let name = importName.trimmingCharacters(in: .whitespaces)
-                        guard !name.isEmpty else { return }
-                        manager.importCurrent(provider, as: name)
-                        importName = ""
-                        importProvider = nil
-                    }
-                    .font(.caption)
-                }
-                Text("Saves the \(provider.displayName) account you're logged into right now.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 12) {
                     Menu("Add Claude account…") {
@@ -126,7 +107,8 @@ struct MenuView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    Button("Import Codex login…") { importProvider = .codex }
+                    // Named automatically from the account's own email.
+                    Button("Import Codex login") { manager.importCurrentCodex() }
                 }
                 .font(.caption)
                 .buttonStyle(.plain)
