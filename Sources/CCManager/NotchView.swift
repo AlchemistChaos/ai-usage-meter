@@ -71,51 +71,55 @@ struct NotchView: View {
         }
     }
 
-    /// Flat on top (merges into the bezel), rounded at the bottom.
+    /// Flat on top (merges into the bezel), rounded at the bottom. Collapsed
+    /// uses the notch's own corner radius so the shape passes as hardware.
     private var notchShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 0, bottomLeadingRadius: 18,
-            bottomTrailingRadius: 18, topTrailingRadius: 0,
+        let r: CGFloat = expanded ? 18 : 10
+        return UnevenRoundedRectangle(
+            topLeadingRadius: 0, bottomLeadingRadius: r,
+            bottomTrailingRadius: r, topTrailingRadius: 0,
             style: .continuous)
     }
 }
 
 // MARK: - Collapsed
 
-/// One live ring per provider, sitting in the wings beside the notch.
+/// Nearly invisible: the shape reads as the notch itself, with one dim status
+/// dot per provider tucked into the bottom corners. Dots stay barely-there
+/// while budgets are healthy and only assert themselves near the limit.
 private struct CollapsedWings: View {
     @ObservedObject var manager: AccountManager
     let notchWidth: CGFloat
 
     var body: some View {
-        HStack(spacing: 0) {
-            wing(for: .claude)
-                .frame(width: NotchController.wingWidth)
-            Color.clear.frame(width: notchWidth)
-            wing(for: .codex)
-                .frame(width: NotchController.wingWidth)
+        HStack {
+            dot(for: .claude)
+            Spacer()
+            dot(for: .codex)
         }
+        .padding(.horizontal, 7)
+        .padding(.bottom, 5)
+        .frame(maxHeight: .infinity, alignment: .bottom)
     }
 
     @ViewBuilder
-    private func wing(for provider: ProviderKind) -> some View {
+    private func dot(for provider: ProviderKind) -> some View {
         let best = manager.accounts
             .filter { $0.provider == provider && $0.headroom != nil }
             .max { ($0.headroom ?? 0) < ($1.headroom ?? 0) }
-        let window = best?.shortWindow ?? best?.longWindow
+        let used = (best?.shortWindow ?? best?.longWindow)?.usedPercent
 
-        HStack(spacing: 6) {
-            UsageRing(usedPercent: window?.usedPercent, size: 20)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(provider == .claude ? "CLAUDE" : "CODEX")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .kerning(0.8)
-                Text(window.map { "\(Int($0.remainingPercent))%" } ?? "—")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .monospacedDigit()
-            }
+        if let used {
+            let urgent = used >= 85
+            Circle()
+                .fill(usageColor(used).opacity(urgent ? 0.9 : 0.35))
+                .frame(width: 4, height: 4)
+                .shadow(color: urgent ? usageColor(used).opacity(0.8) : .clear,
+                        radius: urgent ? 3 : 0)
+        } else {
+            Circle()
+                .fill(.white.opacity(0.12))
+                .frame(width: 4, height: 4)
         }
     }
 }

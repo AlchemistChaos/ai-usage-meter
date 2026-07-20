@@ -8,9 +8,13 @@ import SwiftUI
 /// invisible parts never steal clicks from the menu bar.
 @MainActor
 final class NotchController {
-    static let collapsedHeight: CGFloat = 38
+    /// Collapsed, the panel matches the physical notch height so it disappears
+    /// into it; the small extra width leaves room for two subtle status dots.
+    static var collapsedHeight: CGFloat {
+        max(NSScreen.main?.safeAreaInsets.top ?? 32, 24)
+    }
     static let expandedSize = CGSize(width: 480, height: 400)
-    static let wingWidth: CGFloat = 88
+    static let wingWidth: CGFloat = 18
 
     private let panel: NSPanel
     private let manager: AccountManager
