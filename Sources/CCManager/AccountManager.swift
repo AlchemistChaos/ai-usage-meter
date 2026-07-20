@@ -78,7 +78,7 @@ final class AccountManager: ObservableObject {
         return result
     }
 
-    // MARK: - Claude (keychain token + live usage endpoint)
+    // MARK: - Claude (app-stored OAuth tokens + live usage endpoint)
 
     private func claudeAccounts() -> [Account] {
         guard let identity = ClaudeProvider.identity() else {
@@ -130,26 +130,6 @@ final class AccountManager: ObservableObject {
                 ?? .noData(reason: isActive ? "fetching usage…" : "no reading yet"))
     }
 
-    /// True when a Claude login exists but the keychain hasn't been unlocked
-    /// for us yet — the UI offers a Connect button that triggers the (one-time)
-    /// macOS approval dialog at a moment the user expects it.
-    var claudeNeedsKeychainApproval: Bool {
-        ClaudeProvider.identity() != nil && ClaudeProvider.credential() == nil
-    }
-
-    func connectClaude() {
-        // Force a fresh keychain read; macOS shows its password dialog here.
-        // "Always Allow" makes it permanent (the app is Developer-ID signed,
-        // so the grant survives rebuilds).
-        if ClaudeProvider.credential(forceReload: true) != nil {
-            lastError = nil
-            lastClaudePoll = nil
-            refresh()
-        } else {
-            lastError = "Keychain access was not granted"
-        }
-    }
-
     /// Fetch live usage for EVERY Claude account we have a token for — each
     /// stored profile carries its own OAuth token (auto-refreshed when expired),
     /// so all accounts' limits stay visible, not just the active one.
@@ -158,33 +138,14 @@ final class AccountManager: ObservableObject {
               lastClaudePoll.map({ -$0.timeIntervalSinceNow > 300 }) ?? true
         else { return }
 
-        // Active login via keychain (covers an account not yet saved as a profile).
-        let keychainJob: (uuid: String, token: String, plan: String?)? = {
-            guard let identity = ClaudeProvider.identity(),
-                  let cred = ClaudeProvider.credential(),
-                  cred.expiresAt.map({ $0 > Date() }) ?? true
-            else { return nil }
-            return (identity.accountUuid, cred.accessToken, cred.subscriptionType)
-        }()
-
         let profiles = ClaudeProvider.listProfiles()
-        guard keychainJob != nil || !profiles.isEmpty else { return }
+        guard !profiles.isEmpty else { return }
 
         claudePollInFlight = true
         Task { @MainActor in
             defer { claudePollInFlight = false }
             var polled = Set<String>()
             var failures: [String] = []
-
-            if let job = keychainJob {
-                do {
-                    let windows = try await ClaudeProvider.fetchUsage(token: job.token)
-                    SnapshotCache.put(
-                        accountID: "claude:\(job.uuid)",
-                        snapshot: .init(windows: windows, plan: job.plan, capturedAt: Date()))
-                    polled.insert(job.uuid)
-                } catch { failures.append("active: \(error.localizedDescription)") }
-            }
 
             for name in profiles {
                 // Skip profiles that are the same account we already polled.
@@ -257,7 +218,7 @@ final class AccountManager: ObservableObject {
         do {
             switch provider {
             case .codex: try ProfileStore.importActive(provider, as: name)
-            case .claude: try ClaudeProvider.importActive(as: name)
+            case .claude: break  // Claude accounts are added via the login flow
             }
             lastError = nil
             refresh()
@@ -271,8 +232,8 @@ final class AccountManager: ObservableObject {
             switch account.provider {
             case .codex: try ProfileStore.activate(.codex, name: account.profileName)
             case .claude:
-                try ClaudeProvider.activate(name: account.profileName)
-                lastClaudePoll = nil  // re-poll usage for the new account
+                lastError = "Claude switching is off — the app never writes your keychain. Use `claude` to change accounts."
+                return
             }
             lastError = nil
             refresh()

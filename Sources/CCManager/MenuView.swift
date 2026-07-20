@@ -31,22 +31,6 @@ struct MenuView: View {
                 }
             }
 
-            if manager.claudeNeedsKeychainApproval {
-                HStack(spacing: 8) {
-                    Image(systemName: "key.fill").foregroundStyle(.orange)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Connect Claude usage")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("One-time keychain approval — choose “Always Allow”")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Connect") { manager.connectClaude() }.font(.caption)
-                }
-                .padding(8)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.08)))
-            }
-
             if let err = manager.lastError {
                 Text(err)
                     .font(.caption)
@@ -177,7 +161,7 @@ private struct RecommendationBanner: View {
                 }
             }
             Spacer()
-            if !isCurrent {
+            if !isCurrent && account.provider == .codex {
                 Button("Switch", action: onSwitch)
                     .font(.caption)
             }
@@ -209,7 +193,7 @@ private struct AccountRow: View {
                             .fill(Color.secondary.opacity(0.15)))
                 }
                 Spacer()
-                if !account.isActive && account.status != .noData(reason: "") {
+                if !account.isActive && account.provider == .codex {
                     Button("Switch", action: onSwitch)
                         .font(.system(size: 10))
                         .opacity(hovering ? 1 : 0.35)
