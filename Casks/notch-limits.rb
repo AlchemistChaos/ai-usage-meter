@@ -7,7 +7,7 @@ cask "notch-limits" do
   desc "Claude Code and Codex usage limits in your Mac's notch"
   homepage "https://github.com/everyai-com/notch-limits"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "CCManager.app"
 
