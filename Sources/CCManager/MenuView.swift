@@ -1,4 +1,5 @@
 import SwiftUI
+import ServiceManagement
 
 struct MenuView: View {
     @ObservedObject var manager: AccountManager
@@ -82,6 +83,21 @@ struct MenuView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.blue)
             }
+
+            Toggle("Launch at login", isOn: Binding(
+                get: { SMAppService.mainApp.status == .enabled },
+                set: { on in
+                    // Registration only sticks for a signed app installed at a
+                    // stable path (/Applications), hence the installed build.
+                    do {
+                        if on { try SMAppService.mainApp.register() }
+                        else { try SMAppService.mainApp.unregister() }
+                    } catch {
+                        manager.lastError = "Launch at login: \(error.localizedDescription)"
+                    }
+                }))
+                .font(.caption)
+                .toggleStyle(.checkbox)
 
             HStack {
                 if let r = manager.lastRefresh {

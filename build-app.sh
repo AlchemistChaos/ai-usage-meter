@@ -21,7 +21,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <dict>
   <key>CFBundleName</key>            <string>CCManager</string>
   <key>CFBundleDisplayName</key>     <string>Codex / Claude Manager</string>
-  <key>CFBundleIdentifier</key>      <string>local.ccmanager</string>
+  <key>CFBundleIdentifier</key>      <string>com.saphaare.ccmanager</string>
   <key>CFBundleVersion</key>         <string>1</string>
   <key>CFBundleShortVersionString</key><string>0.1</string>
   <key>CFBundleExecutable</key>      <string>CCManager</string>
@@ -33,10 +33,29 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# Ad-hoc sign so the keychain and Codex config are readable without Gatekeeper noise.
-codesign --force --deep --sign - "$APP" 2>/dev/null || \
-  echo "note: ad-hoc codesign failed; app will still run locally"
+# Prefer the real Developer ID identity (stable identity for macOS permission
+# grants and launch-at-login); fall back to ad-hoc if it's ever missing.
+IDENTITY="Developer ID Application: SAPHAARE LABS PRIVATE LIMITED (M359MD8CXK)"
+if security find-identity -v -p codesigning | grep -q "M359MD8CXK"; then
+  codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+  echo "signed with Developer ID ($(codesign -dv "$APP" 2>&1 | grep TeamIdentifier))"
+else
+  codesign --force --deep --sign - "$APP" 2>/dev/null || \
+    echo "note: ad-hoc codesign failed; app will still run locally"
+fi
 
 echo "Built $APP"
-echo "Run:      open $APP"
-echo "Diagnose: ./$APP/Contents/MacOS/CCManager --diagnose"
+
+# --install: put it in /Applications and (re)launch — the stable home macOS
+# expects for permission grants and launch-at-login.
+if [[ "${2:-}" == "--install" || "${1:-}" == "--install" ]]; then
+  pkill -x CCManager 2>/dev/null || true
+  rm -rf "/Applications/$APP"
+  cp -R "$APP" /Applications/
+  open "/Applications/$APP"
+  echo "Installed and launched /Applications/$APP"
+else
+  echo "Run:      open $APP"
+  echo "Install:  ./build-app.sh release --install"
+  echo "Diagnose: ./$APP/Contents/MacOS/CCManager --diagnose"
+fi
