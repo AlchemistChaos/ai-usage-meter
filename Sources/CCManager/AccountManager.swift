@@ -127,7 +127,9 @@ final class AccountManager: ObservableObject {
             isActive: isActive,
             windows: cached?.projectedWindows() ?? [],
             status: cached.map { .live($0.capturedAt) }
-                ?? .noData(reason: isActive ? "fetching usage…" : "no reading yet"))
+                ?? .noData(reason: isActive
+                    ? "sign in via “Add Claude account…” below to see limits"
+                    : "no reading yet"))
     }
 
     /// Fetch live usage for EVERY Claude account we have a token for — each
