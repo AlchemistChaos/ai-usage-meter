@@ -1,6 +1,11 @@
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    /// Posted when the notch should snap back to ambient immediately.
+    static let ccmCollapse = Notification.Name("ccm.collapse")
+}
+
 /// Hosts the notch UI: a borderless, non-activating panel glued to the top
 /// centre of the screen, drawn as a black extension of the hardware notch.
 /// Collapsed it is a slim wing on each side of the notch; on hover it springs
@@ -16,6 +21,7 @@ final class NotchController {
 
     private let panel: NSPanel
     private let manager: AccountManager
+    private var outsideClickMonitor: Any?
     private var state: NotchState = {
         switch ProcessInfo.processInfo.environment["CCM_NOTCH_STATE"] {
         case "full": return .full
@@ -53,6 +59,16 @@ final class NotchController {
         layout()
         panel.orderFrontRegardless()
 
+        // Click anywhere outside the panel → collapse instantly. This is the
+        // escape hatch users reach for when the dashboard feels in the way.
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.state != .ambient else { return }
+                NotificationCenter.default.post(name: .ccmCollapse, object: nil)
+            }
+        }
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main) { [weak self] _ in
@@ -74,18 +90,37 @@ final class NotchController {
     }
 
     private var panelHeight: CGFloat = 0
+    private var shrinkTask: Task<Void, Never>?
 
     private func setState(_ value: NotchState, height: CGFloat) {
-        guard value != state || height != panelHeight else { return }
         state = value
         panelHeight = height
-        layout()
+        shrinkTask?.cancel()
+
+        let target = targetSize()
+        if target.height >= panel.frame.height {
+            // Growing (or equal): give the animation room immediately.
+            layout()
+        } else {
+            // Shrinking: wait for the collapse animation, then size to
+            // whatever the state is *now* — never a stale capture.
+            shrinkTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 460_000_000)
+                guard !Task.isCancelled else { return }
+                self.layout()
+            }
+        }
+    }
+
+    private func targetSize() -> CGSize {
+        var size = state.size
+        if size.height <= 0 { size.height = max(panelHeight, 200) }
+        return size
     }
 
     private func layout() {
         guard let screen = NSScreen.main else { return }
-        var size = state.size
-        if size.height <= 0 { size.height = max(panelHeight, 200) }
+        let size = targetSize()
         let frame = NSRect(
             x: screen.frame.midX - Self.expandedSize.width / 2,
             y: screen.frame.maxY - size.height,

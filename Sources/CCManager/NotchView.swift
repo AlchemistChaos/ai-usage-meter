@@ -120,6 +120,10 @@ struct NotchView: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .ccmCollapse)) { _ in
+            hoverTask?.cancel()
+            advance(to: .ambient)
+        }
         // Fast, springy in; softer settle out.
         .animation(.spring(response: state == .ambient ? 0.42 : 0.3,
                            dampingFraction: 0.82), value: state)
@@ -131,17 +135,11 @@ struct NotchView: View {
 
     private func advance(to next: NotchState) {
         guard next != state else { return }
-        // Window must grow before content does, and shrink after it's gone.
-        if height(of: next) >= height(of: state) {
-            onStateChange(next, height(of: next))
-            state = next
-        } else {
-            state = next
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 420_000_000)
-                if state == next { onStateChange(next, height(of: next)) }
-            }
-        }
+        state = next
+        // Report immediately; the controller grows the window right away but
+        // defers shrinking until the collapse animation has played, always
+        // converging on the *latest* reported state (no stale-size races).
+        onStateChange(next, height(of: next))
     }
 
     private var notchShape: UnevenRoundedRectangle {
