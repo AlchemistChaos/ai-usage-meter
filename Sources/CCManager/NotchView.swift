@@ -316,7 +316,10 @@ private struct FullDashboard: View {
                 .foregroundStyle(Ink.primary)
             Spacer()
             if let w = rec.shortWindow ?? rec.longWindow {
-                Text("\(Int(w.remainingPercent))% \(w.label) left")
+                // Frame headroom as runway, not just a number.
+                Text(w.remainingPercent >= 70
+                     ? "\(Int(w.remainingPercent))% \(w.label) runway"
+                     : "\(Int(w.remainingPercent))% \(w.label) left")
                     .font(.system(size: 10, design: .rounded))
                     .foregroundStyle(Ink.secondary)
                     .monospacedDigit()
@@ -360,23 +363,69 @@ private struct FullDashboard: View {
             }
             .padding(.horizontal, 2)
         } else {
-            HStack(spacing: 5) {
-                if !manager.todayTokens.isEmpty {
-                    Text("TODAY")
-                        .font(.system(size: 7.5, weight: .bold))
-                        .foregroundStyle(Ink.tertiary)
-                        .kerning(1.1)
-                    Text("\(TokenStats.formatCount(manager.todayTokens.inputTokens)) in · "
-                         + "\(TokenStats.formatCount(manager.todayTokens.outputTokens)) out")
-                        .font(.system(size: 10, design: .rounded))
-                        .foregroundStyle(Ink.secondary)
-                        .monospacedDigit()
+            VStack(alignment: .leading, spacing: 8) {
+                if !manager.weekTokens.isEmpty {
+                    ValueStrip(manager: manager)
                 }
-                Spacer()
-                AddAccountMenu(manager: manager)
+                HStack(spacing: 5) {
+                    if !manager.todayTokens.isEmpty {
+                        Text("TODAY")
+                            .font(.system(size: 7.5, weight: .bold))
+                            .foregroundStyle(Ink.tertiary)
+                            .kerning(1.1)
+                        Text("\(TokenStats.formatCount(manager.todayTokens.inputTokens)) in · "
+                             + "\(TokenStats.formatCount(manager.todayTokens.outputTokens)) out")
+                            .font(.system(size: 10, design: .rounded))
+                            .foregroundStyle(Ink.secondary)
+                            .monospacedDigit()
+                    }
+                    Spacer()
+                    AddAccountMenu(manager: manager)
+                }
+                .padding(.horizontal, 2)
             }
-            .padding(.horizontal, 2)
         }
+    }
+}
+
+/// The number that reframes a subscription from a cap into a deal: what this
+/// week's usage would have cost on the pay-per-token API, and the multiple of
+/// what the plans actually cost. Subscriptions reward shipping — this line is
+/// the scoreboard.
+private struct ValueStrip: View {
+    @ObservedObject var manager: AccountManager
+
+    var body: some View {
+        let today = manager.todayTokens.apiEquivalentDollars
+        let week = manager.weekTokens.apiEquivalentDollars
+        let spend = manager.weeklyPlanSpend
+        let multiple = spend > 0 ? week / spend : 0
+
+        HStack(spacing: 8) {
+            Image(systemName: "flame.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(
+                    LinearGradient(colors: [.orange, .yellow],
+                                   startPoint: .bottom, endPoint: .top))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("≈\(TokenStats.formatDollars(week)) of API-equivalent work this week")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Ink.primary)
+                    .monospacedDigit()
+                Text(multiple >= 1.5
+                     ? "~\(Int(multiple.rounded()))× what your plans cost — keep shipping"
+                     : "today ≈\(TokenStats.formatDollars(today)) · estimated at API list prices")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(Ink.secondary)
+                    .monospacedDigit()
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .fill(LinearGradient(
+                colors: [.orange.opacity(0.10), .white.opacity(0.03)],
+                startPoint: .leading, endPoint: .trailing)))
     }
 }
 

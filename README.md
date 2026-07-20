@@ -1,8 +1,8 @@
 # Notch Limits
 
-**See every Claude Code and Codex subscription's usage limits at a glance — living in your Mac's notch.**
+**Use every token you pay for. Your Claude Code and Codex limits, living in your Mac's notch.**
 
-If you pay for more than one Claude or Codex plan, you have no way to know which one has headroom left. This puts all of them in one place: 5-hour windows, weekly windows, per-model caps, reset times, and a recommendation for which account to use next.
+A subscription rewards shipping: every window that resets with headroom left is work you paid for and didn't do. Notch Limits puts all your accounts in one place — 5-hour windows, weekly windows, per-model caps, reset times, which account to use next — and shows what your usage would have cost at API list prices, so you can see the deal you're getting and run it hot.
 
 ![The full dashboard](docs/dashboard.png)
 
@@ -15,12 +15,13 @@ Hover the notch and it opens. Move away and it disappears back into the hardware
 
 ## What it does
 
+- **The scoreboard.** ≈API-equivalent dollars for today and the week, next to a rough multiple of what your plans cost. `~28× what your plans cost — keep shipping` beats any streak widget.
 - **All your accounts, live.** Every Claude account you add is polled independently, so you see everyone's limits at once — not just the one you're currently signed into.
 - **The limits you didn't know you had.** Claude enforces per-model weekly caps separate from your overall weekly. It's routine to sit at 50% overall while one model is at 98% and about to lock you out. Those get their own bar.
 - **Reset times, not just percentages.** Every window shows a countdown *and* the wall-clock moment it resets (`2h 5m · 8:30 PM`).
 - **Which account to use next.** A recommendation ranked by remaining headroom across every account.
 - **One-click Codex account switching**, with automatic backups.
-- **Today's token usage**, summed from local Claude Code transcripts.
+- **Today's token usage**, summed from local Claude Code transcripts, priced per model at published API rates (cache writes at 1.25×, cache reads at 0.1×).
 
 ## Install
 

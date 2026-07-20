@@ -14,8 +14,9 @@ final class AccountManager: ObservableObject {
     private var lastClaudePoll: Date?
     private var claudePollInFlight = false
 
-    /// Tokens burned today (Claude, machine-wide from local transcripts).
+    /// Tokens burned (Claude, machine-wide from local transcripts).
     @Published private(set) var todayTokens = TokenStats()
+    @Published private(set) var weekTokens = TokenStats()
     private var lastTokenScan: Date?
     private var tokenScanInFlight = false
 
@@ -44,8 +45,8 @@ final class AccountManager: ObservableObject {
         else { return }
         tokenScanInFlight = true
         Task.detached(priority: .utility) { [weak self] in
-            let stats = TokenStats.collectToday()
-            await self?.applyTokenStats(stats)
+            let windows = TokenStats.collectWindows()
+            await self?.applyTokenStats(windows.today, week: windows.week)
         }
     }
 
@@ -57,8 +58,30 @@ final class AccountManager: ObservableObject {
         }
     }
 
-    private func applyTokenStats(_ stats: TokenStats) {
+    /// Rough weekly subscription spend across all visible accounts, from list
+    /// prices by plan tier. Used to frame API-equivalent value as a multiple.
+    var weeklyPlanSpend: Double {
+        let monthly = accounts.reduce(0.0) { sum, a in
+            guard a.headroom != nil || a.isActive else { return sum }
+            let plan = (a.plan ?? "").lowercased()
+            switch a.provider {
+            case .claude:
+                if plan.contains("20x") { return sum + 200 }
+                if plan.contains("max") { return sum + 100 }
+                if plan.contains("pro") { return sum + 20 }
+                return sum
+            case .codex:
+                if plan.contains("pro") { return sum + 200 }
+                if plan.contains("plus") { return sum + 20 }
+                return sum
+            }
+        }
+        return monthly * 12 / 52
+    }
+
+    private func applyTokenStats(_ stats: TokenStats, week: TokenStats) {
         todayTokens = stats
+        weekTokens = week
         lastTokenScan = Date()
         tokenScanInFlight = false
     }
