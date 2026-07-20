@@ -29,26 +29,34 @@ enum ClaudeProvider {
         let detail: String
     }
 
-    /// Look for a real subscription credential in the keychain.
-    static func probe() -> Probe {
-        for service in keychainServices {
-            guard let json = readKeychain(service: service),
-                  let obj = try? JSONSerialization.jsonObject(with: json) as? [String: Any]
-            else { continue }
-            if obj["claudeAiOauth"] != nil {
-                return Probe(foundOAuth: true, detail: "OAuth credential found in \(service)")
-            }
-        }
-        // Also honour the file-based credential path some installs use.
+    /// Silent probe used by the refresh loop. Only checks the file-based
+    /// credential path — reading the keychain entries triggers a macOS
+    /// password dialog on every access, which is unacceptable on a 30s timer.
+    /// Use `probe(includeKeychain: true)` (the --diagnose path) for the full check.
+    static func probe(includeKeychain: Bool = false) -> Probe {
+        // File-based credential path some installs use; no prompt to read.
         let fileURL = ProfileStore.activeCredentialPath(.claude)
         if let data = try? Data(contentsOf: fileURL),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            obj["claudeAiOauth"] != nil {
             return Probe(foundOAuth: true, detail: "OAuth credential found at ~/.claude/.credentials.json")
         }
+        if includeKeychain {
+            for service in keychainServices {
+                guard let json = readKeychain(service: service),
+                      let obj = try? JSONSerialization.jsonObject(with: json) as? [String: Any]
+                else { continue }
+                if obj["claudeAiOauth"] != nil {
+                    return Probe(foundOAuth: true, detail: "OAuth credential found in \(service)")
+                }
+            }
+            return Probe(
+                foundOAuth: false,
+                detail: "No subscription token found — only MCP tokens are present")
+        }
         return Probe(
             foundOAuth: false,
-            detail: "No subscription token found — only MCP tokens are present")
+            detail: "No file-based credential; run `claude` login in a terminal to create one")
     }
 
     /// Read a generic password entry from the login keychain.
