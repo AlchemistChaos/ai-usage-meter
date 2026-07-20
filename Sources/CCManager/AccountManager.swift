@@ -30,7 +30,7 @@ final class AccountManager: ObservableObject {
     func refresh() {
         var result = codexAccounts()
         result.append(contentsOf: claudeAccounts())
-        accounts = result
+        accounts = Self.applyDemoLabels(result)
         lastRefresh = Date()
         pollClaudeUsageIfStale()
         scanTokensIfStale()
@@ -46,6 +46,14 @@ final class AccountManager: ObservableObject {
         Task.detached(priority: .utility) { [weak self] in
             let stats = TokenStats.collectToday()
             await self?.applyTokenStats(stats)
+        }
+    }
+
+    /// Swap real emails for distinct placeholders when demo mode is on.
+    private static func applyDemoLabels(_ accounts: [Account]) -> [Account] {
+        guard Account.demoMode else { return accounts }
+        return accounts.enumerated().map { i, a in
+            a.relabelled(Account.demoLabels[i % Account.demoLabels.count])
         }
     }
 
@@ -197,7 +205,7 @@ final class AccountManager: ObservableObject {
             // Rebuild rows without re-triggering the poll.
             var result = codexAccounts()
             result.append(contentsOf: claudeAccounts())
-            accounts = result
+            accounts = Self.applyDemoLabels(result)
         }
     }
 

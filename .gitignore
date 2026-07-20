@@ -1,2 +1,4 @@
 .build/
 CCManager.app/
+dist/
+.DS_Store

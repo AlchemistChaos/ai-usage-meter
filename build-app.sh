@@ -20,7 +20,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>            <string>CCManager</string>
-  <key>CFBundleDisplayName</key>     <string>Codex / Claude Manager</string>
+  <key>CFBundleDisplayName</key>     <string>Notch Limits</string>
   <key>CFBundleIdentifier</key>      <string>com.saphaare.ccmanager</string>
   <key>CFBundleVersion</key>         <string>1</string>
   <key>CFBundleShortVersionString</key><string>0.1</string>
@@ -33,13 +33,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# Prefer the real Developer ID identity (stable identity for macOS permission
-# grants and launch-at-login); fall back to ad-hoc if it's ever missing.
-IDENTITY="Developer ID Application: SAPHAARE LABS PRIVATE LIMITED (M359MD8CXK)"
-if security find-identity -v -p codesigning | grep -q "M359MD8CXK"; then
+# Sign with a Developer ID if one is configured, else ad-hoc (fine locally —
+# apps you build yourself are never quarantined by Gatekeeper).
+#   export CCM_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+IDENTITY="${CCM_SIGN_IDENTITY:-}"
+if [[ -n "$IDENTITY" ]] && security find-identity -v -p codesigning | grep -qF "$IDENTITY"; then
   codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
-  echo "signed with Developer ID ($(codesign -dv "$APP" 2>&1 | grep TeamIdentifier))"
+  echo "signed: $(codesign -dv "$APP" 2>&1 | grep TeamIdentifier)"
 else
+  [[ -n "$IDENTITY" ]] && echo "note: CCM_SIGN_IDENTITY not found in keychain; using ad-hoc"
   codesign --force --deep --sign - "$APP" 2>/dev/null || \
     echo "note: ad-hoc codesign failed; app will still run locally"
 fi

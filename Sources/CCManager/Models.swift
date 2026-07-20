@@ -86,6 +86,21 @@ struct Account: Identifiable {
 
     var label: String { email ?? profileName }
 
+    /// A copy with a different display email — used only by demo mode.
+    func relabelled(_ newEmail: String) -> Account {
+        Account(provider: provider, profileName: profileName, email: newEmail,
+                plan: plan, isActive: isActive, windows: windows, status: status)
+    }
+
+    /// Placeholder identities so marketing screenshots never expose real
+    /// account emails. Enabled with CCM_DEMO=1.
+    static let demoMode = ProcessInfo.processInfo.environment["CCM_DEMO"] != nil
+    static let demoLabels = [
+        "you@example.com", "work@example.com",
+        "side-project@example.com", "team@example.com",
+        "personal@example.com", "agency@example.com",
+    ]
+
     /// The window we treat as the short-term ("5 hour") budget, if the
     /// provider reports one. Codex reports its short window as "secondary"
     /// when a weekly primary window is in force.

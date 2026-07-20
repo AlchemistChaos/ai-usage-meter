@@ -121,6 +121,7 @@ struct NotchView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .ccmCollapse)) { _ in
+            guard ProcessInfo.processInfo.environment["CCM_NOTCH_STATE"] == nil else { return }
             hoverTask?.cancel()
             advance(to: .ambient)
         }
