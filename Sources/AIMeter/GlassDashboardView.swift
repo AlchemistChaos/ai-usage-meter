@@ -1,8 +1,18 @@
 import ServiceManagement
 import SwiftUI
 
+private struct DashboardContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct GlassDashboardView: View {
     @ObservedObject var manager: AccountManager
+    @State private var contentHeight: CGFloat = 360
+    private let maxDashboardHeight: CGFloat = 680
     private let columns = Array(
         repeating: GridItem(.flexible(), spacing: 6),
         count: 3)
@@ -20,11 +30,21 @@ struct GlassDashboardView: View {
                 DashboardTransientStatus(manager: manager)
             }
             .padding(13)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: DashboardContentHeightKey.self,
+                        value: geometry.size.height)
+                }
+            }
         }
         .scrollBounceBehavior(.basedOnSize)
-        .frame(
-            width: 500,
-            height: AccountPresentation.dashboardHeight(for: manager.accounts))
+        .scrollDisabled(contentHeight <= maxDashboardHeight)
+        .frame(width: 500, height: min(contentHeight, maxDashboardHeight))
+        .onPreferenceChange(DashboardContentHeightKey.self) { measuredHeight in
+            guard measuredHeight > 0 else { return }
+            contentHeight = ceil(measuredHeight)
+        }
         .background {
             ZStack {
                 NativeGlassBackground()
@@ -129,6 +149,7 @@ private struct ProviderGlassSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             ProviderHeader(provider: group.provider)
+                .padding(.horizontal, 2)
 
             if let active = group.active {
                 ActiveAccountCard(account: active)

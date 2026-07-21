@@ -33,6 +33,23 @@ rg -Fq '.scrollBounceBehavior(.basedOnSize)' "$view" || {
   echo "FAIL: the dashboard should not bounce-scroll when its content fits" >&2
   exit 1
 }
+rg -q '@State private var contentHeight: CGFloat' "$view" || {
+  echo "FAIL: dashboard content height should be measured, not estimated" >&2
+  exit 1
+}
+rg -Fq '.onPreferenceChange(DashboardContentHeightKey.self)' "$view" || exit 1
+rg -Fq '.scrollDisabled(contentHeight <= maxDashboardHeight)' "$view" || {
+  echo "FAIL: scrolling should be disabled for content that fits" >&2
+  exit 1
+}
+if rg -q 'AccountPresentation\.dashboardHeight' "$view"; then
+  echo "FAIL: dashboard still uses the fixed height estimator" >&2
+  exit 1
+fi
+rg -Uq 'ProviderHeader\(provider: group\.provider\)\n\s+\.padding\(\.horizontal, 2\)' "$view" || {
+  echo "FAIL: provider headings should align with OTHER ACCOUNTS" >&2
+  exit 1
+}
 
 rg -q 'accessibilityLabel\("Settings"\)' "$view" || {
   echo "FAIL: header settings menu is missing" >&2

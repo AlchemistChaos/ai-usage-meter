@@ -121,41 +121,6 @@ enum AccountPresentationHarness {
         expect(AccountPresentation.resetSummary(for: weekly) == "—",
                "missing reset time should remain explicit")
 
-        let panelAccounts = [
-            claude,
-            account(.claude, "claude-2", active: false,
-                    windows: [fiveHour, weekly]),
-            codex,
-            account(.codex, "codex-2", active: false,
-                    windows: [fiveHour, weekly]),
-            account(.codex, "codex-3", active: false,
-                    windows: [fiveHour, weekly]),
-        ]
-        let panelHeight = AccountPresentation.dashboardHeight(
-            for: panelAccounts)
-        expect(panelHeight >= 420,
-               "a populated menu panel must have a usable finite height")
-        expect(panelHeight <= 680,
-               "the menu panel must remain bounded on smaller displays")
-
-        let fable = window("Fable wk", minutes: 10_080, used: 49)
-        let screenshotLayoutAccounts = [
-            account(.claude, "claude-active", active: true,
-                    windows: [fiveHour, weekly, fable]),
-            account(.claude, "claude-2", active: false,
-                    windows: [fiveHour, weekly]),
-            account(.claude, "claude-3", active: false,
-                    windows: [fiveHour, weekly]),
-            account(.codex, "codex-active", active: true,
-                    windows: [weekly]),
-            account(.codex, "codex-empty", active: false,
-                    windows: []),
-        ]
-        let compactHeight = AccountPresentation.dashboardHeight(
-            for: screenshotLayoutAccounts)
-        expect(compactHeight >= 440 && compactHeight <= 490,
-               "mixed compact rows should not reserve a large empty footer")
-
         expect(
             AccountPresentation.codexProfileName(
                 email: "river@example.com",

@@ -100,36 +100,4 @@ enum AccountPresentation {
         return "\(preferred)-\(suffix)"
     }
 
-    static func dashboardHeight(for accounts: [Account]) -> CGFloat {
-        let contentHeight = groups(accounts).reduce(CGFloat(48)) { total, group in
-            var sectionHeight = CGFloat(34)
-
-            if let active = group.active {
-                sectionHeight += 45 + CGFloat(max(active.windows.count, 1) * 17)
-            }
-
-            if !group.inactive.isEmpty {
-                let rowStarts = stride(
-                    from: 0,
-                    to: group.inactive.count,
-                    by: 3)
-                let rowHeights = rowStarts.map { start -> CGFloat in
-                    let end = min(start + 3, group.inactive.count)
-                    let hasUsage = group.inactive[start..<end]
-                        .contains { !$0.windows.isEmpty }
-                    return hasUsage ? 72 : 52
-                }
-                let rowSpacing = CGFloat(max(rowHeights.count - 1, 0) * 6)
-                sectionHeight += 20 + rowHeights.reduce(0, +) + rowSpacing
-            }
-
-            if group.active == nil && group.inactive.isEmpty {
-                sectionHeight += 28
-            }
-
-            return total + sectionHeight + 10
-        }
-
-        return min(max(contentHeight, 360), 680)
-    }
 }
