@@ -4,7 +4,7 @@ import Foundation
 /// detection can be verified from the terminal.
 enum Diagnostics {
     static func run() {
-        print("=== CCManager diagnostics ===\n")
+        print("=== AI Meter diagnostics ===\n")
 
         print("[Codex] active credential: \(ProfileStore.activeCredentialPath(.codex).path())")
         if let id = CodexProvider.identity(at: ProfileStore.activeCredentialPath(.codex)) {

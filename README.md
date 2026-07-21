@@ -1,4 +1,4 @@
-# AI Usage Meter
+# AI Meter
 
 A private, local-first macOS menu-bar dashboard for Claude and OpenAI Codex subscription limits.
 
@@ -27,7 +27,7 @@ cd ai-usage-meter
 ./build-app.sh release --install
 ```
 
-The app is installed at `/Applications/CCManager.app`. It has no Dock icon; open it from the A/C gauge in the macOS menu bar.
+The app is installed at `/Applications/AI Meter.app`. It has no Dock icon; open it from the A/C gauge in the macOS menu bar.
 
 ## Adding accounts
 
@@ -39,7 +39,7 @@ Choose **Add Anthropic account**, select a browser, and complete the OAuth flow.
 
 ### Codex
 
-Choose **Add OpenAI Codex account** and sign in through the browser. CCManager launches the installed official Codex CLI with a temporary isolated `CODEX_HOME`, forces file-based credential storage there, imports the completed login, and removes the temporary directory. Your active `~/.codex/auth.json` is not changed.
+Choose **Add OpenAI Codex account** and sign in through the browser. AI Meter launches the installed official Codex CLI with a temporary isolated `CODEX_HOME`, forces file-based credential storage there, imports the completed login, and removes the temporary directory. Your active `~/.codex/auth.json` is not changed.
 
 **Import OpenAI Codex login** remains available for saving whichever account is already active in the normal Codex CLI.
 
@@ -51,7 +51,7 @@ There is no telemetry, analytics, hosted backend, or project-owned server.
 
 - Claude usage and profile requests go directly to official Anthropic endpoints in `ClaudeProvider.swift` and `ClaudeOAuth.swift`.
 - Adding a Codex account runs the installed official Codex CLI, which performs its login directly with OpenAI inside an isolated local state directory.
-- Codex usage is read locally from `~/.codex/logs_2.sqlite`; CCManager does not call a Codex usage endpoint.
+- Codex usage is read locally from `~/.codex/logs_2.sqlite`; AI Meter does not call a Codex usage endpoint.
 - The OAuth callback listener binds only to localhost.
 - Saved credentials live under `~/.ccmanager/profiles/` with owner-only `0600` permissions.
 - Codex switching backs up the active credential before replacing it and writes atomically.
@@ -59,16 +59,16 @@ There is no telemetry, analytics, hosted backend, or project-owned server.
 
 Inspect the relevant implementation directly:
 
-- [`ClaudeOAuth.swift`](Sources/CCManager/ClaudeOAuth.swift)
-- [`ClaudeProvider.swift`](Sources/CCManager/ClaudeProvider.swift)
-- [`CodexLogin.swift`](Sources/CCManager/CodexLogin.swift)
-- [`CodexProvider.swift`](Sources/CCManager/CodexProvider.swift)
-- [`ProfileStore.swift`](Sources/CCManager/ProfileStore.swift)
+- [`ClaudeOAuth.swift`](Sources/AIMeter/ClaudeOAuth.swift)
+- [`ClaudeProvider.swift`](Sources/AIMeter/ClaudeProvider.swift)
+- [`CodexLogin.swift`](Sources/AIMeter/CodexLogin.swift)
+- [`CodexProvider.swift`](Sources/AIMeter/CodexProvider.swift)
+- [`ProfileStore.swift`](Sources/AIMeter/ProfileStore.swift)
 
 To print the local credential/data sources detected by the app:
 
 ```bash
-/Applications/CCManager.app/Contents/MacOS/CCManager --diagnose
+/Applications/AI Meter.app/Contents/MacOS/AIMeter --diagnose
 ```
 
 ## How usage is obtained
@@ -83,18 +83,19 @@ To print the local credential/data sources detected by the app:
 swift build -c release
 bash Tests/DashboardStructureHarness.sh
 bash Tests/NativeGlassStructureHarness.sh
-swiftc Sources/CCManager/Models.swift \
-  Sources/CCManager/AccountPresentation.swift \
+bash Tests/AppBrandingHarness.sh
+swiftc Sources/AIMeter/Models.swift \
+  Sources/AIMeter/AccountPresentation.swift \
   Tests/AccountPresentationHarness.swift \
   -o /tmp/notch-limits-presentation-tests
 /tmp/notch-limits-presentation-tests
-swiftc Sources/CCManager/CodexLogin.swift \
+swiftc Sources/AIMeter/CodexLogin.swift \
   Tests/CodexLoginHarness.swift \
   -o /tmp/notch-limits-codex-login-tests
 /tmp/notch-limits-codex-login-tests
 ```
 
-`./build-app.sh release` creates an ad-hoc signed local bundle by default. Set `CCM_SIGN_IDENTITY` to a Developer ID identity for distribution builds.
+`./build-app.sh release` creates an ad-hoc signed local bundle by default. Set `AIMETER_SIGN_IDENTITY` to a Developer ID identity for distribution builds.
 
 ## Project layout
 

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-glass="Sources/CCManager/NativeGlassBackground.swift"
-dashboard="Sources/CCManager/GlassDashboardView.swift"
+glass="Sources/AIMeter/NativeGlassBackground.swift"
+dashboard="Sources/AIMeter/GlassDashboardView.swift"
 
 test -f "$glass" || {
   echo "FAIL: native glass view is missing" >&2

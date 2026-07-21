@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "CCManager",
+    name: "AIMeter",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "CCManager",
-            path: "Sources/CCManager",
+            name: "AIMeter",
+            path: "Sources/AIMeter",
             linkerSettings: [.linkedLibrary("sqlite3")]
         )
     ]

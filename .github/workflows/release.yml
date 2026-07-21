@@ -48,7 +48,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" build.keychain
           rm /tmp/cert.p12
-          echo "CCM_SIGN_IDENTITY=$(security find-identity -v -p codesigning \
+          echo "AIMETER_SIGN_IDENTITY=$(security find-identity -v -p codesigning \
             | grep 'Developer ID Application' | head -1 \
             | sed -E 's/.*"(.*)"/\1/')" >> "$GITHUB_ENV"
 
@@ -58,10 +58,10 @@ jobs:
       - name: Package DMG
         run: |
           mkdir -p dist/stage
-          cp -R CCManager.app dist/stage/
+          cp -R "AI Meter.app" dist/stage/
           ln -s /Applications dist/stage/Applications
-          hdiutil create -volname "AI Usage Meter" -srcfolder dist/stage \
-            -ov -format UDZO "dist/AIUsageMeter-${{ steps.v.outputs.version }}.dmg"
+          hdiutil create -volname "AI Meter" -srcfolder dist/stage \
+            -ov -format UDZO "dist/AIMeter-${{ steps.v.outputs.version }}.dmg"
 
       - name: Notarize and staple
         if: steps.secrets.outputs.signing == 'true'
@@ -70,9 +70,9 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          DMG="dist/AIUsageMeter-${{ steps.v.outputs.version }}.dmg"
+          DMG="dist/AIMeter-${{ steps.v.outputs.version }}.dmg"
           # Sign the DMG itself so the staple sticks to the download.
-          codesign --force --sign "$CCM_SIGN_IDENTITY" --timestamp "$DMG"
+          codesign --force --sign "$AIMETER_SIGN_IDENTITY" --timestamp "$DMG"
           xcrun notarytool submit "$DMG" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
@@ -84,7 +84,7 @@ jobs:
       - name: Checksum
         id: sum
         run: |
-          DMG="dist/AIUsageMeter-${{ steps.v.outputs.version }}.dmg"
+          DMG="dist/AIMeter-${{ steps.v.outputs.version }}.dmg"
           echo "sha256=$(shasum -a 256 "$DMG" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
@@ -95,6 +95,6 @@ jobs:
           body: |
             ### Install
 
-            Download the DMG below and drag CCManager to Applications.
+            Download the DMG below and drag AI Meter to Applications.
 
             `sha256: ${{ steps.sum.outputs.sha256 }}`

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-view="Sources/CCManager/GlassDashboardView.swift"
-manager="Sources/CCManager/AccountManager.swift"
+view="Sources/AIMeter/GlassDashboardView.swift"
+manager="Sources/AIMeter/AccountManager.swift"
 
 if rg -q 'GlassValueStrip' "$view"; then
   echo "FAIL: Claude API-equivalent value strip is still present" >&2

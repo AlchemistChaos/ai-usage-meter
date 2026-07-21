@@ -1,11 +1,11 @@
 import SwiftUI
 
 @main
-struct CCManagerApp: App {
+struct AIMeterApp: App {
     @StateObject private var manager = AccountManager.shared
 
     init() {
-        // `CCManager --diagnose` prints what the app can actually read and exits.
+        // `AIMeter --diagnose` prints what the app can actually read and exits.
         // Useful for confirming credential detection without opening the UI.
         if CommandLine.arguments.contains("--diagnose") {
             Diagnostics.run()
