@@ -57,14 +57,20 @@ enum ProfileStore {
         guard FileManager.default.fileExists(atPath: src.path()) else {
             throw CCError.notLoggedIn(provider)
         }
+        return try importCredential(provider, from: src, as: name)
+    }
+
+    /// Save a credential produced in an isolated login home without changing
+    /// the credential file used by the active CLI account.
+    @discardableResult
+    static func importCredential(
+        _ provider: ProviderKind,
+        from source: URL,
+        as name: String
+    ) throws -> URL {
+        try ensureDirs()
         let dest = profileFile(provider, name)
-        try FileManager.default.createDirectory(
-            at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if FileManager.default.fileExists(atPath: dest.path()) {
-            try FileManager.default.removeItem(at: dest)
-        }
-        try FileManager.default.copyItem(at: src, to: dest)
-        try restrictPermissions(dest)
+        try CodexLogin.copyCredential(from: source, to: dest)
         return dest
     }
 

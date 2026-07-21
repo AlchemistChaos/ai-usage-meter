@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 final class AccountManager: ObservableObject {
-    /// One instance shared by the menu bar scene and the notch panel.
+    /// One instance shared by the menu-bar dashboard.
     static let shared = AccountManager()
     @Published private(set) var accounts: [Account] = []
     @Published private(set) var lastRefresh: Date?
@@ -237,6 +237,12 @@ final class AccountManager: ObservableObject {
     @Published var pendingClaudeLogin: ClaudeOAuth.PendingLogin?
     private var callbackServer: ClaudeOAuth.CallbackServer?
 
+    @Published private(set) var pendingCodexLogin: CodexLogin.Session?
+    private var codexLoginProcess: Process?
+    private var codexLoginErrorPipe: Pipe?
+    private var cancelledCodexLoginID: UUID?
+    private var restartCodexLoginAfterCancellation = false
+
     /// Browsers installed on this Mac that can open the login page. Each
     /// browser has its own cookie jar, so signing in from different browsers
     /// lets you add several Claude accounts without logging anything out.
@@ -307,6 +313,128 @@ final class AccountManager: ObservableObject {
 
     // MARK: - Actions
 
+    /// Authenticate another Codex account in a private CODEX_HOME. The active
+    /// ~/.codex/auth.json is never touched, so the current CLI session remains
+    /// active throughout the browser login.
+    func beginCodexLogin() {
+        guard pendingCodexLogin == nil else { return }
+
+        var preparedSession: CodexLogin.Session?
+        do {
+            let session = try CodexLogin.prepare(in: ProfileStore.root)
+            preparedSession = session
+            let runner = try CodexLogin.makeProcess(for: session)
+            pendingCodexLogin = session
+            codexLoginProcess = runner.process
+            codexLoginErrorPipe = runner.errorPipe
+            cancelledCodexLoginID = nil
+            restartCodexLoginAfterCancellation = false
+
+            runner.process.terminationHandler = { [weak self] process in
+                let errorData = runner.errorPipe.fileHandleForReading
+                    .readDataToEndOfFile()
+                let errorText = String(data: errorData, encoding: .utf8) ?? ""
+                Task { @MainActor [weak self] in
+                    self?.finishCodexLogin(
+                        session: session,
+                        exitStatus: process.terminationStatus,
+                        errorText: errorText)
+                }
+            }
+            try runner.process.run()
+        } catch {
+            if let preparedSession { CodexLogin.cleanup(preparedSession) }
+            pendingCodexLogin = nil
+            codexLoginProcess = nil
+            codexLoginErrorPipe = nil
+            lastError = error.localizedDescription
+        }
+    }
+
+    func cancelCodexLogin() {
+        restartCodexLoginAfterCancellation = false
+        stopCodexLogin()
+    }
+
+    func restartCodexLogin() {
+        guard pendingCodexLogin != nil else {
+            beginCodexLogin()
+            return
+        }
+        restartCodexLoginAfterCancellation = true
+        stopCodexLogin()
+    }
+
+    private func stopCodexLogin() {
+        guard let session = pendingCodexLogin else { return }
+        cancelledCodexLoginID = session.id
+        if let process = codexLoginProcess, process.isRunning {
+            process.terminate()
+        } else {
+            finishCodexLogin(session: session, exitStatus: -1, errorText: "")
+        }
+    }
+
+    private func finishCodexLogin(
+        session: CodexLogin.Session,
+        exitStatus: Int32,
+        errorText: String
+    ) {
+        guard pendingCodexLogin?.id == session.id else {
+            CodexLogin.cleanup(session)
+            return
+        }
+
+        defer {
+            let shouldRestart = restartCodexLoginAfterCancellation
+            CodexLogin.cleanup(session)
+            pendingCodexLogin = nil
+            codexLoginProcess = nil
+            codexLoginErrorPipe = nil
+            cancelledCodexLoginID = nil
+            restartCodexLoginAfterCancellation = false
+            if shouldRestart {
+                Task { @MainActor [weak self] in self?.beginCodexLogin() }
+            }
+        }
+
+        if cancelledCodexLoginID == session.id { return }
+
+        guard exitStatus == 0,
+              let identity = CodexProvider.identity(at: session.authFile) else {
+            let detail = errorText.trimmingCharacters(in: .whitespacesAndNewlines)
+            lastError = detail.isEmpty
+                ? "Codex sign-in did not complete. Please try again."
+                : String(detail.suffix(300))
+            return
+        }
+
+        do {
+            let name = AccountPresentation.codexProfileName(
+                email: identity.email,
+                accountID: identity.accountID,
+                existingAccountIDsByName: existingCodexIdentities())
+            try ProfileStore.importCredential(
+                .codex,
+                from: session.authFile,
+                as: name)
+            lastError = nil
+            refresh()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    private func existingCodexIdentities() -> [String: String] {
+        var result: [String: String] = [:]
+        for name in ProfileStore.listProfiles(.codex) {
+            result[name] = CodexProvider.accountIdentity(
+                at: ProfileStore.profileFile(.codex, name))
+                ?? "unreadable:\(name)"
+        }
+        return result
+    }
+
     /// The account with the most headroom, among those we have real data for.
     var recommended: Account? {
         accounts
@@ -322,8 +450,10 @@ final class AccountManager: ObservableObject {
             lastError = "No Codex login found — run `codex login` first"
             return
         }
-        let name = id.email?.split(separator: "@").first.map(String.init)
-            ?? String(id.accountID.prefix(8))
+        let name = AccountPresentation.codexProfileName(
+            email: id.email,
+            accountID: id.accountID,
+            existingAccountIDsByName: existingCodexIdentities())
         importCurrent(.codex, as: name)
     }
 

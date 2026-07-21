@@ -1,18 +1,7 @@
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    var notch: NotchController?
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        Task { @MainActor in
-            notch = NotchController(manager: AccountManager.shared)
-        }
-    }
-}
-
 @main
 struct CCManagerApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var manager = AccountManager.shared
 
     init() {
@@ -33,23 +22,11 @@ struct CCManagerApp: App {
         MenuBarExtra {
             MenuView(manager: manager)
         } label: {
-            // Show the tightest remaining budget right in the menu bar.
-            if let account = manager.recommended ?? manager.accounts.first(where: { $0.isActive }),
-               let window = account.shortWindow ?? account.longWindow {
-                Image(systemName: symbol(for: window.usedPercent))
-                Text("\(Int(window.remainingPercent))%")
-            } else {
-                Image(systemName: "gauge.medium")
+            Image(systemName: "gauge.medium")
+            if let label = AccountPresentation.menuLabel(for: manager.accounts) {
+                Text(label).monospacedDigit()
             }
         }
         .menuBarExtraStyle(.window)
-    }
-
-    private func symbol(for used: Double) -> String {
-        switch used {
-        case ..<40: return "gauge.high"
-        case ..<75: return "gauge.medium"
-        default: return "gauge.low"
-        }
     }
 }
