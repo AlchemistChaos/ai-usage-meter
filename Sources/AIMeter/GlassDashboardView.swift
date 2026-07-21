@@ -21,6 +21,7 @@ struct GlassDashboardView: View {
             }
             .padding(13)
         }
+        .scrollBounceBehavior(.basedOnSize)
         .frame(
             width: 500,
             height: AccountPresentation.dashboardHeight(for: manager.accounts))
@@ -188,7 +189,8 @@ private struct ProviderHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(provider == .claude ? "Claude" : "Codex")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white)
 
             Spacer()
 

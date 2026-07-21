@@ -25,6 +25,14 @@ rg -q '\? "Claude"|: "Codex"' "$view" || {
   echo "FAIL: concise provider labels are missing" >&2
   exit 1
 }
+rg -Uq 'Text\(provider == \.claude \? "Claude" : "Codex"\)\n\s+\.font\(\.system\(size: 9, weight: \.semibold\)\)\n\s+\.foregroundStyle\(\.white\)' "$view" || {
+  echo "FAIL: provider headings should match metadata size and remain white" >&2
+  exit 1
+}
+rg -Fq '.scrollBounceBehavior(.basedOnSize)' "$view" || {
+  echo "FAIL: the dashboard should not bounce-scroll when its content fits" >&2
+  exit 1
+}
 
 rg -q 'accessibilityLabel\("Settings"\)' "$view" || {
   echo "FAIL: header settings menu is missing" >&2
