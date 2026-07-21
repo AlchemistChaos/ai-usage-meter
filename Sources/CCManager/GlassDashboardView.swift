@@ -17,8 +17,7 @@ struct GlassDashboardView: View {
                         manager: manager,
                         columns: columns)
                 }
-                GlassValueStrip(manager: manager)
-                GlassDashboardFooter(manager: manager)
+                DashboardTransientStatus(manager: manager)
             }
             .padding(13)
         }
@@ -60,7 +59,57 @@ struct GlassDashboardView: View {
             }
             .buttonStyle(.plain)
             .help("Refresh")
+
+            Menu {
+                Menu("Add Anthropic account") {
+                    Button("Default browser") {
+                        manager.beginClaudeLogin()
+                    }
+                    Divider()
+                    ForEach(manager.availableBrowsers) { browser in
+                        Button(browser.name) {
+                            manager.beginClaudeLogin(browser: browser)
+                        }
+                    }
+                }
+
+                Button("Import OpenAI Codex login") {
+                    manager.importCurrentCodex()
+                }
+
+                Divider()
+
+                Toggle("Launch at login", isOn: launchAtLogin)
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .accessibilityLabel("Settings")
+            .help("Settings")
+
+            Button {
+                NSApplication.shared.terminate(nil)
+            } label: {
+                Image(systemName: "power")
+            }
+            .buttonStyle(.plain)
+            .help("Quit")
         }
+    }
+
+    private var launchAtLogin: Binding<Bool> {
+        Binding(
+            get: { SMAppService.mainApp.status == .enabled },
+            set: { enabled in
+                do {
+                    if enabled { try SMAppService.mainApp.register() }
+                    else { try SMAppService.mainApp.unregister() }
+                } catch {
+                    manager.lastError =
+                        "Launch at login: \(error.localizedDescription)"
+                }
+            })
     }
 }
 
@@ -384,46 +433,7 @@ private struct RemainingBar: View {
     }
 }
 
-private struct GlassValueStrip: View {
-    @ObservedObject var manager: AccountManager
-
-    var body: some View {
-        if !manager.weekTokens.isEmpty {
-            let week = manager.weekTokens.apiEquivalentDollars
-            let spend = manager.weeklyPlanSpend
-            let multiple = spend > 0 ? week / spend : 0
-
-            HStack(spacing: 8) {
-                Image(systemName: "flame.fill")
-                    .foregroundStyle(.orange)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("≈\(TokenStats.formatDollars(week)) Claude API equivalent")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                    Text(multiple >= 1.5
-                         ? "~\(Int(multiple.rounded()))× plan cost · Claude estimate only"
-                         : "Claude estimate only · this week")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(LinearGradient(
-                colors: [.orange.opacity(0.12), .white.opacity(0.025)],
-                startPoint: .leading,
-                endPoint: .trailing))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(.orange.opacity(0.14), lineWidth: 1)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-    }
-}
-
-private struct GlassDashboardFooter: View {
+private struct DashboardTransientStatus: View {
     @ObservedObject var manager: AccountManager
     @State private var loginCode = ""
 
@@ -458,29 +468,6 @@ private struct GlassDashboardFooter: View {
                         }
                     }
                 }
-            } else {
-                HStack(spacing: 10) {
-                    Menu("Add Anthropic account") {
-                        Button("Default browser") {
-                            manager.beginClaudeLogin()
-                        }
-                        Divider()
-                        ForEach(manager.availableBrowsers) { browser in
-                            Button(browser.name) {
-                                manager.beginClaudeLogin(browser: browser)
-                            }
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-
-                    Button("Import OpenAI Codex login") {
-                        manager.importCurrentCodex()
-                    }
-                    .buttonStyle(.plain)
-                }
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.blue)
             }
 
             if let error = manager.lastError {
@@ -490,25 +477,6 @@ private struct GlassDashboardFooter: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack {
-                Toggle("Launch at login", isOn: Binding(
-                    get: { SMAppService.mainApp.status == .enabled },
-                    set: { enabled in
-                        do {
-                            if enabled { try SMAppService.mainApp.register() }
-                            else { try SMAppService.mainApp.unregister() }
-                        } catch {
-                            manager.lastError = "Launch at login: \(error.localizedDescription)"
-                        }
-                    }))
-                    .font(.system(size: 10))
-                    .toggleStyle(.checkbox)
-                Spacer()
-                Button("Quit") { NSApplication.shared.terminate(nil) }
-                    .font(.system(size: 10))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-            }
         }
         .padding(.horizontal, 2)
     }
