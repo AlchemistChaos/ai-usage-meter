@@ -12,6 +12,12 @@ private struct DashboardContentHeightKey: PreferenceKey {
 struct GlassDashboardView: View {
     @ObservedObject var manager: AccountManager
     @State private var contentHeight: CGFloat = 360
+    @AppStorage(MenuBarPreferenceKey.claudeFiveHour)
+    private var showsClaudeFiveHour = MenuBarSelection.standard.showsClaudeFiveHour
+    @AppStorage(MenuBarPreferenceKey.claudeWeekly)
+    private var showsClaudeWeekly = MenuBarSelection.standard.showsClaudeWeekly
+    @AppStorage(MenuBarPreferenceKey.codexWeekly)
+    private var showsCodexWeekly = MenuBarSelection.standard.showsCodexWeekly
     private let maxDashboardHeight: CGFloat = 680
     private let columns = Array(
         repeating: GridItem(.flexible(), spacing: 6),
@@ -111,6 +117,14 @@ struct GlassDashboardView: View {
 
                 Button("Import OpenAI Codex login") {
                     manager.importCurrentCodex()
+                }
+
+                Divider()
+
+                Menu("Menu bar") {
+                    Toggle("Claude 5-hour", isOn: $showsClaudeFiveHour)
+                    Toggle("Claude weekly", isOn: $showsClaudeWeekly)
+                    Toggle("Codex weekly", isOn: $showsCodexWeekly)
                 }
 
                 Divider()

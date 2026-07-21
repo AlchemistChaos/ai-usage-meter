@@ -104,6 +104,7 @@ swiftc Sources/AIMeter/CodexLogin.swift \
 | `App.swift` / `GlassDashboardView.swift` | Menu-bar scene and provider-first dashboard |
 | `NativeGlassBackground.swift` | Clear native glass background that cannot intercept input |
 | `AccountManager.swift` | Refresh loop, account actions, and login coordination |
+| `MenuBarPreferences.swift` | Persistent menu-bar metric selections and compact defaults |
 | `ClaudeProvider.swift` / `ClaudeOAuth.swift` | Claude profiles, OAuth, and live limits |
 | `CodexProvider.swift` / `CodexLogin.swift` | Local Codex limits and isolated account login |
 | `ProfileStore.swift` | Owner-only profile storage, backups, and atomic switching |
@@ -112,7 +113,8 @@ swiftc Sources/AIMeter/CodexLogin.swift \
 
 - Claude CLI switching is deliberately unsupported because it would require modifying Claude's own credential state.
 - Codex can only show data previously recorded while that account was active and used.
-- An hourly menu-bar value displays `—` when the provider has not recorded a short-window limit.
+- The compact default shows Claude's 5-hour and Codex's weekly capacity. Use Settings → Menu bar to toggle Claude 5-hour, Claude weekly, and Codex weekly independently.
+- A selected menu-bar value displays `—` when that exact provider window is unavailable; it never substitutes a different window.
 - Locally built/ad-hoc signed apps are intended for your own Mac; public downloads should be Developer ID signed and notarized.
 
 ## Attribution and license

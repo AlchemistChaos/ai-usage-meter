@@ -98,8 +98,8 @@ enum AccountPresentationHarness {
         ])
         expect(
             AccountPresentation.menuLabel(for: [claude, codex])
-                == "A 75 · C —",
-            "menu label should never substitute weekly for missing hourly data")
+                == "A 75 · C 45",
+            "default menu label should stay compact")
 
         let codexHourly = account(.codex, "codex-hourly", active: true, windows: [
             window("5h", minutes: 300, used: 30),
@@ -107,8 +107,48 @@ enum AccountPresentationHarness {
         ])
         expect(
             AccountPresentation.menuLabel(for: [claude, codexHourly])
-                == "A 75 · C 70",
-            "menu label should show each provider's hourly remaining capacity")
+                == "A 75 · C 45",
+            "default menu label should ignore Codex short windows")
+
+        let claudeWithoutWeekly = account(
+            .claude, "claude-short-only", active: true, windows: [fiveHour])
+        expect(
+            AccountPresentation.menuLabel(for: [claudeWithoutWeekly])
+                == "A 75",
+            "default menu label should not reserve space for hidden metrics")
+
+        expect(
+            AccountPresentation.menuLabel(for: [codex]) == "C 45",
+            "Codex-only menu labels should stay compact")
+
+        let allMetrics = MenuBarSelection(
+            showsClaudeFiveHour: true,
+            showsClaudeWeekly: true,
+            showsCodexWeekly: true)
+        expect(
+            AccountPresentation.menuLabel(
+                for: [claude, codex], selection: allMetrics)
+                == "A 5h 75 · W 51 · C 45",
+            "all selected limits should be explicit")
+
+        let weeklyOnly = MenuBarSelection(
+            showsClaudeFiveHour: false,
+            showsClaudeWeekly: true,
+            showsCodexWeekly: false)
+        expect(
+            AccountPresentation.menuLabel(
+                for: [claude, codex], selection: weeklyOnly)
+                == "A W 51",
+            "Claude weekly alone should retain its window label")
+
+        let noMetrics = MenuBarSelection(
+            showsClaudeFiveHour: false,
+            showsClaudeWeekly: false,
+            showsCodexWeekly: false)
+        expect(
+            AccountPresentation.menuLabel(
+                for: [claude, codex], selection: noMetrics) == nil,
+            "turning every metric off should leave only the gauge icon")
 
         let resetWindow = window(
             "Weekly",

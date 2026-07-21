@@ -73,6 +73,13 @@ rg -q 'help\("Quit"\)' "$view" || {
 rg -q 'Add Anthropic account' "$view" || exit 1
 rg -q 'Import OpenAI Codex login' "$view" || exit 1
 rg -q 'Launch at login' "$view" || exit 1
+rg -Fq 'Menu("Menu bar")' "$view" || {
+  echo "FAIL: menu bar preferences are missing from settings" >&2
+  exit 1
+}
+rg -Fq 'Toggle("Claude 5-hour"' "$view" || exit 1
+rg -Fq 'Toggle("Claude weekly"' "$view" || exit 1
+rg -Fq 'Toggle("Codex weekly"' "$view" || exit 1
 rg -q 'Add OpenAI Codex account' "$view" || {
   echo "FAIL: isolated Codex login action is missing" >&2
   exit 1

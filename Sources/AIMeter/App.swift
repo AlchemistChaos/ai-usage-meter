@@ -3,6 +3,12 @@ import SwiftUI
 @main
 struct AIMeterApp: App {
     @StateObject private var manager = AccountManager.shared
+    @AppStorage(MenuBarPreferenceKey.claudeFiveHour)
+    private var showsClaudeFiveHour = MenuBarSelection.standard.showsClaudeFiveHour
+    @AppStorage(MenuBarPreferenceKey.claudeWeekly)
+    private var showsClaudeWeekly = MenuBarSelection.standard.showsClaudeWeekly
+    @AppStorage(MenuBarPreferenceKey.codexWeekly)
+    private var showsCodexWeekly = MenuBarSelection.standard.showsCodexWeekly
 
     init() {
         // `AIMeter --diagnose` prints what the app can actually read and exits.
@@ -23,7 +29,13 @@ struct AIMeterApp: App {
             MenuView(manager: manager)
         } label: {
             Image(systemName: "gauge.medium")
-            if let label = AccountPresentation.menuLabel(for: manager.accounts) {
+            if let label = AccountPresentation.menuLabel(
+                for: manager.accounts,
+                selection: MenuBarSelection(
+                    showsClaudeFiveHour: showsClaudeFiveHour,
+                    showsClaudeWeekly: showsClaudeWeekly,
+                    showsCodexWeekly: showsCodexWeekly)
+            ) {
                 Text(label).monospacedDigit()
             }
         }

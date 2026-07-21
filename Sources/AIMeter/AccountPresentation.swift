@@ -44,19 +44,50 @@ enum AccountPresentation {
         }
     }
 
-    static func menuLabel(for accounts: [Account]) -> String? {
+    static func menuLabel(
+        for accounts: [Account],
+        selection: MenuBarSelection = .standard
+    ) -> String? {
         var parts: [String] = []
-        if accounts.contains(where: { $0.provider == .claude && $0.isActive }) {
-            let value = activeRemaining(for: .claude, in: accounts)
-                .map(String.init) ?? "—"
-            parts.append("A \(value)")
+        if let claude = accounts.first(where: {
+            $0.provider == .claude && $0.isActive
+        }) {
+            let showsBoth = selection.showsClaudeFiveHour
+                && selection.showsClaudeWeekly
+            if selection.showsClaudeFiveHour {
+                let value = remaining(in: claude, windowMinutes: 300)
+                    .map(String.init) ?? "—"
+                parts.append(showsBoth ? "A 5h \(value)" : "A \(value)")
+            }
+            if selection.showsClaudeWeekly {
+                let value = remaining(in: claude, windowMinutes: 10_080)
+                    .map(String.init) ?? "—"
+                parts.append(selection.showsClaudeFiveHour
+                    ? "W \(value)"
+                    : "A W \(value)")
+            }
         }
-        if accounts.contains(where: { $0.provider == .codex && $0.isActive }) {
-            let value = activeRemaining(for: .codex, in: accounts)
+        if selection.showsCodexWeekly,
+           let codex = accounts.first(where: {
+            $0.provider == .codex && $0.isActive
+           }) {
+            let weekly = remaining(
+                in: codex, windowMinutes: 10_080)
                 .map(String.init) ?? "—"
-            parts.append("C \(value)")
+            parts.append("C \(weekly)")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private static func remaining(
+        in account: Account,
+        windowMinutes: Int
+    ) -> Int? {
+        account.windows.first(where: {
+            $0.windowMinutes == windowMinutes
+        }).map {
+            Int($0.remainingPercent.rounded())
+        }
     }
 
     static func resetSummary(for window: UsageWindow) -> String {
