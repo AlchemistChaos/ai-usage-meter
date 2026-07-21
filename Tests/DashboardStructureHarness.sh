@@ -9,6 +9,23 @@ if rg -q 'GlassValueStrip' "$view"; then
   exit 1
 fi
 
+if rg -q 'Remaining subscription capacity|Anthropic · Claude|OpenAI · Codex' "$view"; then
+  echo "FAIL: removed dashboard/provider copy is still present" >&2
+  exit 1
+fi
+if rg -q 'provider == \.claude \? "A" : "C"' "$view"; then
+  echo "FAIL: provider letter logos are still present" >&2
+  exit 1
+fi
+rg -Uq 'Text\("Usage"\)\n\s+\.font\(\.system\(size: 10,' "$view" || {
+  echo "FAIL: Usage should match the Updated text size" >&2
+  exit 1
+}
+rg -q '\? "Claude"|: "Codex"' "$view" || {
+  echo "FAIL: concise provider labels are missing" >&2
+  exit 1
+}
+
 rg -q 'accessibilityLabel\("Settings"\)' "$view" || {
   echo "FAIL: header settings menu is missing" >&2
   exit 1

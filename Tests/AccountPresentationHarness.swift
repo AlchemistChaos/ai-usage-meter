@@ -144,7 +144,7 @@ enum AccountPresentationHarness {
         ]
         let compactHeight = AccountPresentation.dashboardHeight(
             for: screenshotLayoutAccounts)
-        expect(compactHeight >= 470 && compactHeight <= 520,
+        expect(compactHeight >= 440 && compactHeight <= 490,
                "mixed compact rows should not reserve a large empty footer")
 
         expect(

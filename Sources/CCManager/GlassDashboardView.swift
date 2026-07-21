@@ -41,13 +41,8 @@ struct GlassDashboardView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Usage")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("Remaining subscription capacity")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
+            Text("Usage")
+                .font(.system(size: 10, weight: .semibold))
             Spacer()
             if let date = manager.lastRefresh {
                 Text("Updated \(date.formatted(date: .omitted, time: .shortened))")
@@ -191,15 +186,7 @@ private struct ProviderHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(provider == .claude ? "A" : "C")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .frame(width: 24, height: 24)
-                .background(markBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-            Text(provider == .claude
-                 ? "Anthropic · Claude"
-                 : "OpenAI · Codex")
+            Text(provider == .claude ? "Claude" : "Codex")
                 .font(.system(size: 13, weight: .semibold))
 
             Spacer()
@@ -208,18 +195,6 @@ private struct ProviderHeader: View {
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.secondary)
         }
-    }
-
-    private var markBackground: AnyShapeStyle {
-        let colors: [Color] = provider == .claude
-            ? [Color(red: 0.94, green: 0.61, blue: 0.40),
-               Color(red: 0.64, green: 0.29, blue: 0.22)]
-            : [Color(red: 0.45, green: 0.74, blue: 1.0),
-               Color(red: 0.34, green: 0.40, blue: 0.86)]
-        return AnyShapeStyle(LinearGradient(
-            colors: colors,
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing))
     }
 }
 

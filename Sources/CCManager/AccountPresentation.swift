@@ -96,8 +96,8 @@ enum AccountPresentation {
     }
 
     static func dashboardHeight(for accounts: [Account]) -> CGFloat {
-        let contentHeight = groups(accounts).reduce(CGFloat(67)) { total, group in
-            var sectionHeight = CGFloat(42)
+        let contentHeight = groups(accounts).reduce(CGFloat(48)) { total, group in
+            var sectionHeight = CGFloat(34)
 
             if let active = group.active {
                 sectionHeight += 45 + CGFloat(max(active.windows.count, 1) * 17)
