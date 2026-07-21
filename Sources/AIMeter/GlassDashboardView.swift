@@ -27,7 +27,9 @@ struct GlassDashboardView: View {
                         manager: manager,
                         columns: columns)
                 }
-                DashboardTransientStatus(manager: manager)
+                if hasTransientStatus {
+                    DashboardTransientStatus(manager: manager)
+                }
             }
             .padding(13)
             .background {
@@ -59,6 +61,12 @@ struct GlassDashboardView: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    private var hasTransientStatus: Bool {
+        manager.pendingCodexLogin != nil
+            || manager.pendingClaudeLogin != nil
+            || manager.lastError != nil
     }
 
     private var header: some View {

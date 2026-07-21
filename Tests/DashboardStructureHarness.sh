@@ -42,6 +42,13 @@ rg -Fq '.scrollDisabled(contentHeight <= maxDashboardHeight)' "$view" || {
   echo "FAIL: scrolling should be disabled for content that fits" >&2
   exit 1
 }
+rg -Uq 'if hasTransientStatus \{\n\s+DashboardTransientStatus\(manager: manager\)\n\s+\}' "$view" || {
+  echo "FAIL: empty transient status still adds bottom spacing" >&2
+  exit 1
+}
+rg -q 'manager\.pendingCodexLogin != nil' "$view" || exit 1
+rg -q 'manager\.pendingClaudeLogin != nil' "$view" || exit 1
+rg -q 'manager\.lastError != nil' "$view" || exit 1
 if rg -q 'AccountPresentation\.dashboardHeight' "$view"; then
   echo "FAIL: dashboard still uses the fixed height estimator" >&2
   exit 1
