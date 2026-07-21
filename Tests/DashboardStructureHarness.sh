@@ -2,6 +2,7 @@
 set -euo pipefail
 
 view="Sources/CCManager/GlassDashboardView.swift"
+manager="Sources/CCManager/AccountManager.swift"
 
 if rg -q 'GlassValueStrip' "$view"; then
   echo "FAIL: Claude API-equivalent value strip is still present" >&2
@@ -30,6 +31,12 @@ rg -q 'Add OpenAI Codex account' "$view" || {
 rg -q 'manager\.beginCodexLogin()' "$view" || exit 1
 rg -q 'manager\.pendingCodexLogin' "$view" || exit 1
 rg -q 'manager\.cancelCodexLogin()' "$view" || exit 1
+rg -q 'Restart OpenAI Codex sign-in' "$view" || {
+  echo "FAIL: pending Codex login cannot be restarted from settings" >&2
+  exit 1
+}
+rg -q 'manager\.restartCodexLogin()' "$view" || exit 1
+rg -q 'func restartCodexLogin()' "$manager" || exit 1
 rg -Fq '.popover(isPresented:' "$view" || {
   echo "FAIL: inactive account reset popover is missing" >&2
   exit 1

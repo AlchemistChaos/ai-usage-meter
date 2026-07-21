@@ -74,10 +74,15 @@ struct GlassDashboardView: View {
                 }
                 .disabled(manager.pendingCodexLogin != nil)
 
-                Button("Add OpenAI Codex account") {
-                    manager.beginCodexLogin()
+                if manager.pendingCodexLogin == nil {
+                    Button("Add OpenAI Codex account") {
+                        manager.beginCodexLogin()
+                    }
+                } else {
+                    Button("Restart OpenAI Codex sign-in") {
+                        manager.restartCodexLogin()
+                    }
                 }
-                .disabled(manager.pendingCodexLogin != nil)
 
                 Button("Import OpenAI Codex login") {
                     manager.importCurrentCodex()

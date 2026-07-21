@@ -241,6 +241,7 @@ final class AccountManager: ObservableObject {
     private var codexLoginProcess: Process?
     private var codexLoginErrorPipe: Pipe?
     private var cancelledCodexLoginID: UUID?
+    private var restartCodexLoginAfterCancellation = false
 
     /// Browsers installed on this Mac that can open the login page. Each
     /// browser has its own cookie jar, so signing in from different browsers
@@ -327,6 +328,7 @@ final class AccountManager: ObservableObject {
             codexLoginProcess = runner.process
             codexLoginErrorPipe = runner.errorPipe
             cancelledCodexLoginID = nil
+            restartCodexLoginAfterCancellation = false
 
             runner.process.terminationHandler = { [weak self] process in
                 let errorData = runner.errorPipe.fileHandleForReading
@@ -350,6 +352,20 @@ final class AccountManager: ObservableObject {
     }
 
     func cancelCodexLogin() {
+        restartCodexLoginAfterCancellation = false
+        stopCodexLogin()
+    }
+
+    func restartCodexLogin() {
+        guard pendingCodexLogin != nil else {
+            beginCodexLogin()
+            return
+        }
+        restartCodexLoginAfterCancellation = true
+        stopCodexLogin()
+    }
+
+    private func stopCodexLogin() {
         guard let session = pendingCodexLogin else { return }
         cancelledCodexLoginID = session.id
         if let process = codexLoginProcess, process.isRunning {
@@ -370,11 +386,16 @@ final class AccountManager: ObservableObject {
         }
 
         defer {
+            let shouldRestart = restartCodexLoginAfterCancellation
             CodexLogin.cleanup(session)
             pendingCodexLogin = nil
             codexLoginProcess = nil
             codexLoginErrorPipe = nil
             cancelledCodexLoginID = nil
+            restartCodexLoginAfterCancellation = false
+            if shouldRestart {
+                Task { @MainActor [weak self] in self?.beginCodexLogin() }
+            }
         }
 
         if cancelledCodexLoginID == session.id { return }
