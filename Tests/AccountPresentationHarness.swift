@@ -90,16 +90,25 @@ enum AccountPresentationHarness {
         ])
         expect(
             AccountPresentation.activeRemaining(
-                for: .claude, in: [claude, inactive]) == 51,
-            "menu reading should use only the active account")
+                for: .claude, in: [claude, inactive]) == 75,
+            "menu reading should use the active account's hourly window")
 
         let codex = account(.codex, "codex", active: true, windows: [
             window("Weekly", minutes: 10_080, used: 55),
         ])
         expect(
             AccountPresentation.menuLabel(for: [claude, codex])
-                == "A 51 · C 45",
-            "menu label should identify both providers")
+                == "A 75 · C —",
+            "menu label should never substitute weekly for missing hourly data")
+
+        let codexHourly = account(.codex, "codex-hourly", active: true, windows: [
+            window("5h", minutes: 300, used: 30),
+            window("Weekly", minutes: 10_080, used: 55),
+        ])
+        expect(
+            AccountPresentation.menuLabel(for: [claude, codexHourly])
+                == "A 75 · C 70",
+            "menu label should show each provider's hourly remaining capacity")
 
         let resetWindow = window(
             "Weekly",

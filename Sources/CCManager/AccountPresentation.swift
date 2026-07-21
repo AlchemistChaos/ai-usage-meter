@@ -39,16 +39,21 @@ enum AccountPresentation {
         guard let active = accounts.first(where: {
             $0.provider == provider && $0.isActive
         }) else { return nil }
-        return active.windows.map(\.remainingPercent).min()
-            .map { Int($0.rounded()) }
+        return active.shortWindow.map {
+            Int($0.remainingPercent.rounded())
+        }
     }
 
     static func menuLabel(for accounts: [Account]) -> String? {
         var parts: [String] = []
-        if let value = activeRemaining(for: .claude, in: accounts) {
+        if accounts.contains(where: { $0.provider == .claude && $0.isActive }) {
+            let value = activeRemaining(for: .claude, in: accounts)
+                .map(String.init) ?? "—"
             parts.append("A \(value)")
         }
-        if let value = activeRemaining(for: .codex, in: accounts) {
+        if accounts.contains(where: { $0.provider == .codex && $0.isActive }) {
+            let value = activeRemaining(for: .codex, in: accounts)
+                .map(String.init) ?? "—"
             parts.append("C \(value)")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
