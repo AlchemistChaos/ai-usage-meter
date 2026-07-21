@@ -40,9 +40,8 @@ Within each provider section:
 Each inactive card contains:
 
 - Account identity and plan.
-- The tightest remaining allowance as a large, explicit `NN% left` value.
-- A horizontal remaining-capacity bar.
-- Small values for the short and long windows when present, such as `5h 82 · wk 68`.
+- The weekly remaining allowance as a large, explicit `NN% weekly left` value and horizontal bar. If no weekly window exists, the longest available window becomes primary and its label is written out.
+- A compact `5h` remaining-capacity bar with its own percentage when a distinct short window exists.
 - Data age when the reading is not current.
 
 Cards use compact 6–9 point internal spacing and six-point grid gaps. They do not use radial, semicircular, speedometer, or ring gauges.
