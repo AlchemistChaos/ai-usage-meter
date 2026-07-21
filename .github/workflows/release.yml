@@ -60,8 +60,8 @@ jobs:
           mkdir -p dist/stage
           cp -R CCManager.app dist/stage/
           ln -s /Applications dist/stage/Applications
-          hdiutil create -volname "Notch Limits" -srcfolder dist/stage \
-            -ov -format UDZO "dist/NotchLimits-${{ steps.v.outputs.version }}.dmg"
+          hdiutil create -volname "AI Usage Meter" -srcfolder dist/stage \
+            -ov -format UDZO "dist/AIUsageMeter-${{ steps.v.outputs.version }}.dmg"
 
       - name: Notarize and staple
         if: steps.secrets.outputs.signing == 'true'
@@ -70,7 +70,7 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          DMG="dist/NotchLimits-${{ steps.v.outputs.version }}.dmg"
+          DMG="dist/AIUsageMeter-${{ steps.v.outputs.version }}.dmg"
           # Sign the DMG itself so the staple sticks to the download.
           codesign --force --sign "$CCM_SIGN_IDENTITY" --timestamp "$DMG"
           xcrun notarytool submit "$DMG" \
@@ -84,7 +84,7 @@ jobs:
       - name: Checksum
         id: sum
         run: |
-          DMG="dist/NotchLimits-${{ steps.v.outputs.version }}.dmg"
+          DMG="dist/AIUsageMeter-${{ steps.v.outputs.version }}.dmg"
           echo "sha256=$(shasum -a 256 "$DMG" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
@@ -95,10 +95,6 @@ jobs:
           body: |
             ### Install
 
-            ```bash
-            brew install --cask everyai-com/tap/notch-limits
-            ```
-
-            Or download the DMG below and drag to Applications.
+            Download the DMG below and drag CCManager to Applications.
 
             `sha256: ${{ steps.sum.outputs.sha256 }}`
