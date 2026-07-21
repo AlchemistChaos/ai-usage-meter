@@ -112,6 +112,23 @@ enum AccountPresentationHarness {
         expect(AccountPresentation.resetSummary(for: weekly) == "—",
                "missing reset time should remain explicit")
 
+        let panelAccounts = [
+            claude,
+            account(.claude, "claude-2", active: false,
+                    windows: [fiveHour, weekly]),
+            codex,
+            account(.codex, "codex-2", active: false,
+                    windows: [fiveHour, weekly]),
+            account(.codex, "codex-3", active: false,
+                    windows: [fiveHour, weekly]),
+        ]
+        let panelHeight = AccountPresentation.dashboardHeight(
+            for: panelAccounts)
+        expect(panelHeight >= 420,
+               "a populated menu panel must have a usable finite height")
+        expect(panelHeight <= 680,
+               "the menu panel must remain bounded on smaller displays")
+
         print("PASS: account presentation")
     }
 }

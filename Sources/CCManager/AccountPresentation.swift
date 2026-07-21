@@ -58,4 +58,27 @@ enum AccountPresentation {
         guard window.resetsAt != nil else { return "—" }
         return "\(window.resetsInDescription) · \(window.resetsAtDescription)"
     }
+
+    static func dashboardHeight(for accounts: [Account]) -> CGFloat {
+        let contentHeight = groups(accounts).reduce(CGFloat(118)) { total, group in
+            var sectionHeight = CGFloat(42)
+
+            if let active = group.active {
+                sectionHeight += 45 + CGFloat(max(active.windows.count, 1) * 17)
+            }
+
+            if !group.inactive.isEmpty {
+                let rows = (group.inactive.count + 2) / 3
+                sectionHeight += 20 + CGFloat(rows * 102)
+            }
+
+            if group.active == nil && group.inactive.isEmpty {
+                sectionHeight += 28
+            }
+
+            return total + sectionHeight + 10
+        }
+
+        return min(max(contentHeight, 360), 680)
+    }
 }

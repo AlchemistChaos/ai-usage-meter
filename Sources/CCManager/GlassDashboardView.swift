@@ -22,8 +22,9 @@ struct GlassDashboardView: View {
             }
             .padding(13)
         }
-        .frame(width: 500)
-        .frame(maxHeight: 720)
+        .frame(
+            width: 500,
+            height: AccountPresentation.dashboardHeight(for: manager.accounts))
         .background {
             ZStack {
                 Rectangle().fill(.ultraThinMaterial)
