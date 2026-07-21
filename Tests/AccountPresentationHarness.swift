@@ -129,6 +129,35 @@ enum AccountPresentationHarness {
         expect(panelHeight <= 680,
                "the menu panel must remain bounded on smaller displays")
 
+        expect(
+            AccountPresentation.codexProfileName(
+                email: "river@example.com",
+                accountID: "new-account",
+                existingAccountIDsByName: [:]) == "river-example-com",
+            "Codex profile names should include the full email domain")
+        expect(
+            AccountPresentation.codexProfileName(
+                email: "river@example.com",
+                accountID: "new-account",
+                existingAccountIDsByName: ["river-example-com": "other-account"])
+                == "river-example-com-2",
+            "Codex profile names should not overwrite a different account")
+        expect(
+            AccountPresentation.codexProfileName(
+                email: "renamed@example.com",
+                accountID: "same-account",
+                existingAccountIDsByName: ["already-saved": "same-account"])
+                == "already-saved",
+            "an already saved Codex identity should reuse its profile")
+        expect(
+            AccountPresentation.resetDetail(for: weekly)
+                == "Available after using this account",
+            "missing reset timestamps should use actionable copy")
+        expect(
+            AccountPresentation.resetDetail(for: resetWindow)
+                .contains(" · "),
+            "available reset details should contain countdown and date/time")
+
         print("PASS: account presentation")
     }
 }

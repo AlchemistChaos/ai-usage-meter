@@ -72,6 +72,12 @@ struct GlassDashboardView: View {
                         }
                     }
                 }
+                .disabled(manager.pendingCodexLogin != nil)
+
+                Button("Add OpenAI Codex account") {
+                    manager.beginCodexLogin()
+                }
+                .disabled(manager.pendingCodexLogin != nil)
 
                 Button("Import OpenAI Codex login") {
                     manager.importCurrentCodex()
@@ -285,6 +291,7 @@ private struct CompactAccountCard: View {
     let account: Account
     let onSwitch: () -> Void
     @State private var hovering = false
+    @State private var showingResetDetails = false
 
     var body: some View {
         let primary = AccountPresentation.primaryWindow(for: account)
@@ -325,7 +332,6 @@ private struct CompactAccountCard: View {
                         .lineLimit(1)
                 }
                 RemainingBar(remaining: primary.remainingPercent, height: 5)
-                ResetSummary(window: primary)
 
                 if let short {
                     HStack(spacing: 5) {
@@ -340,7 +346,6 @@ private struct CompactAccountCard: View {
                             .monospacedDigit()
                             .frame(width: 25, alignment: .trailing)
                     }
-                    ResetSummary(window: short)
                 }
             } else {
                 Text(account.status.description)
@@ -357,23 +362,64 @@ private struct CompactAccountCard: View {
                 .stroke(.white.opacity(hovering ? 0.12 : 0.055), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onHover { hovering = $0 }
-        .help("Data \(account.status.description)")
+        .onTapGesture { showingResetDetails.toggle() }
+        .popover(isPresented: $showingResetDetails, arrowEdge: .bottom) {
+            ResetDetailsPopover(account: account)
+        }
+        .accessibilityAction(named: "Show reset times") {
+            showingResetDetails = true
+        }
+        .help("Click for reset times · data \(account.status.description)")
     }
 }
 
-private struct ResetSummary: View {
-    let window: UsageWindow
+private struct ResetDetailsPopover: View {
+    let account: Account
 
     var body: some View {
-        Text(AccountPresentation.resetSummary(for: window))
-            .font(.system(size: 7.5, weight: .medium, design: .rounded))
-            .foregroundStyle(.secondary)
-            .monospacedDigit()
-            .lineLimit(1)
-            .minimumScaleFactor(0.72)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .help("Resets \(AccountPresentation.resetSummary(for: window))")
+        let primary = AccountPresentation.primaryWindow(for: account)
+        let short = AccountPresentation.shortWindow(
+            for: account,
+            excluding: primary)
+        let windows = [primary, short].compactMap { $0 }
+
+        VStack(alignment: .leading, spacing: 9) {
+            Text(account.label)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+
+            if windows.isEmpty {
+                Text("Reset times are available after using this account")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(windows) { window in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(window.label)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .frame(width: 48, alignment: .leading)
+                        Text("\(Int(window.remainingPercent.rounded()))% left")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .frame(width: 52, alignment: .trailing)
+                        Text(AccountPresentation.resetDetail(for: window))
+                            .font(.system(size: 10, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+                }
+            }
+
+            Text("Data \(account.status.description)")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(12)
+        .frame(width: 310, alignment: .leading)
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -439,6 +485,18 @@ private struct DashboardTransientStatus: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if manager.pendingCodexLogin != nil {
+                HStack(spacing: 7) {
+                    ProgressView().controlSize(.small)
+                    Text("Waiting for OpenAI Codex sign-in in your browser…")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Cancel") { manager.cancelCodexLogin() }
+                        .buttonStyle(.plain)
+                }
+            }
+
             if let pending = manager.pendingClaudeLogin {
                 if pending.usesCallback {
                     HStack(spacing: 7) {

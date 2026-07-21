@@ -59,6 +59,42 @@ enum AccountPresentation {
         return "\(window.resetsInDescription) · \(window.resetsAtDescription)"
     }
 
+    static func resetDetail(for window: UsageWindow) -> String {
+        guard window.resetsAt != nil else {
+            return "Available after using this account"
+        }
+        return resetSummary(for: window)
+    }
+
+    static func codexProfileName(
+        email: String?,
+        accountID: String,
+        existingAccountIDsByName: [String: String]
+    ) -> String {
+        if let saved = existingAccountIDsByName.keys.sorted().first(where: {
+            existingAccountIDsByName[$0] == accountID
+        }) {
+            return saved
+        }
+
+        let source = (email?.isEmpty == false ? email! : String(accountID.prefix(8)))
+            .lowercased()
+        let normalized = String(source.map { character in
+            character.isLetter || character.isNumber ? character : "-"
+        })
+        let base = normalized.split(separator: "-")
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+        let preferred = base.isEmpty ? String(accountID.prefix(8)) : base
+
+        guard existingAccountIDsByName[preferred] != nil else { return preferred }
+        var suffix = 2
+        while existingAccountIDsByName["\(preferred)-\(suffix)"] != nil {
+            suffix += 1
+        }
+        return "\(preferred)-\(suffix)"
+    }
+
     static func dashboardHeight(for accounts: [Account]) -> CGFloat {
         let contentHeight = groups(accounts).reduce(CGFloat(118)) { total, group in
             var sectionHeight = CGFloat(42)
@@ -69,7 +105,7 @@ enum AccountPresentation {
 
             if !group.inactive.isEmpty {
                 let rows = (group.inactive.count + 2) / 3
-                sectionHeight += 20 + CGFloat(rows * 102)
+                sectionHeight += 20 + CGFloat(rows * 86)
             }
 
             if group.active == nil && group.inactive.isEmpty {
