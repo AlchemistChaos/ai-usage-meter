@@ -53,4 +53,9 @@ enum AccountPresentation {
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
+
+    static func resetSummary(for window: UsageWindow) -> String {
+        guard window.resetsAt != nil else { return "—" }
+        return "\(window.resetsInDescription) · \(window.resetsAtDescription)"
+    }
 }

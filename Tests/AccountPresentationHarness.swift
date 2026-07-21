@@ -13,13 +13,14 @@ private func expect(
 private func window(
     _ label: String,
     minutes: Int,
-    used: Double
+    used: Double,
+    resetsAt: Date? = nil
 ) -> UsageWindow {
     UsageWindow(
         label: label,
         usedPercent: used,
         windowMinutes: minutes,
-        resetsAt: nil)
+        resetsAt: resetsAt)
 }
 
 private func account(
@@ -99,6 +100,17 @@ enum AccountPresentationHarness {
             AccountPresentation.menuLabel(for: [claude, codex])
                 == "A 51 · C 45",
             "menu label should identify both providers")
+
+        let resetWindow = window(
+            "Weekly",
+            minutes: 10_080,
+            used: 20,
+            resetsAt: Date().addingTimeInterval(48 * 60 * 60))
+        let resetSummary = AccountPresentation.resetSummary(for: resetWindow)
+        expect(resetSummary.contains(" · "),
+               "reset summary should include countdown and date/time")
+        expect(AccountPresentation.resetSummary(for: weekly) == "—",
+               "missing reset time should remain explicit")
 
         print("PASS: account presentation")
     }
