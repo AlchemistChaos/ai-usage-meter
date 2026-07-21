@@ -26,11 +26,12 @@ struct GlassDashboardView: View {
             height: AccountPresentation.dashboardHeight(for: manager.accounts))
         .background {
             ZStack {
-                Rectangle().fill(.ultraThinMaterial)
+                NativeGlassBackground()
+                    .allowsHitTesting(false)
                 LinearGradient(
                     colors: [
-                        Color(red: 0.12, green: 0.14, blue: 0.20).opacity(0.50),
-                        Color.black.opacity(0.45),
+                        Color(red: 0.12, green: 0.14, blue: 0.20).opacity(0.20),
+                        Color.black.opacity(0.16),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing)
