@@ -29,8 +29,8 @@ struct GlassDashboardView: View {
                 Rectangle().fill(.ultraThinMaterial)
                 LinearGradient(
                     colors: [
-                        Color(red: 0.12, green: 0.14, blue: 0.20).opacity(0.72),
-                        Color.black.opacity(0.62),
+                        Color(red: 0.12, green: 0.14, blue: 0.20).opacity(0.50),
+                        Color.black.opacity(0.45),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing)

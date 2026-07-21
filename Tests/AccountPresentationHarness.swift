@@ -129,6 +129,24 @@ enum AccountPresentationHarness {
         expect(panelHeight <= 680,
                "the menu panel must remain bounded on smaller displays")
 
+        let fable = window("Fable wk", minutes: 10_080, used: 49)
+        let screenshotLayoutAccounts = [
+            account(.claude, "claude-active", active: true,
+                    windows: [fiveHour, weekly, fable]),
+            account(.claude, "claude-2", active: false,
+                    windows: [fiveHour, weekly]),
+            account(.claude, "claude-3", active: false,
+                    windows: [fiveHour, weekly]),
+            account(.codex, "codex-active", active: true,
+                    windows: [weekly]),
+            account(.codex, "codex-empty", active: false,
+                    windows: []),
+        ]
+        let compactHeight = AccountPresentation.dashboardHeight(
+            for: screenshotLayoutAccounts)
+        expect(compactHeight >= 470 && compactHeight <= 520,
+               "mixed compact rows should not reserve a large empty footer")
+
         expect(
             AccountPresentation.codexProfileName(
                 email: "river@example.com",
