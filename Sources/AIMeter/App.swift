@@ -1,44 +1,67 @@
-import SwiftUI
+import AppKit
 
-@main
-struct AIMeterApp: App {
-    @StateObject private var manager = AccountManager.shared
-    @AppStorage(MenuBarPreferenceKey.claudeFiveHour)
-    private var showsClaudeFiveHour = MenuBarSelection.standard.showsClaudeFiveHour
-    @AppStorage(MenuBarPreferenceKey.claudeWeekly)
-    private var showsClaudeWeekly = MenuBarSelection.standard.showsClaudeWeekly
-    @AppStorage(MenuBarPreferenceKey.codexWeekly)
-    private var showsCodexWeekly = MenuBarSelection.standard.showsCodexWeekly
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItemController: StatusItemController?
 
-    init() {
-        // `AIMeter --diagnose` prints what the app can actually read and exits.
-        // Useful for confirming credential detection without opening the UI.
-        if CommandLine.arguments.contains("--diagnose") {
-            Diagnostics.run()
-            exit(0)
-        }
-        if let i = CommandLine.arguments.firstIndex(of: "--selftest"),
-           i + 1 < CommandLine.arguments.count {
-            Diagnostics.selfTest(name: CommandLine.arguments[i + 1])
-            exit(0)
-        }
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let controller = StatusItemController(manager: AccountManager.shared)
+        statusItemController = controller
+        controller.ensureStatusItem()
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(recoverStatusItem(_:)),
+            name: NSWorkspace.didWakeNotification,
+            object: nil)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(recoverStatusItem(_:)),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil)
     }
 
-    var body: some Scene {
-        MenuBarExtra {
-            MenuView(manager: manager)
-        } label: {
-            Image(systemName: "gauge.medium")
-            if let label = AccountPresentation.menuLabel(
-                for: manager.accounts,
-                selection: MenuBarSelection(
-                    showsClaudeFiveHour: showsClaudeFiveHour,
-                    showsClaudeWeekly: showsClaudeWeekly,
-                    showsCodexWeekly: showsCodexWeekly)
-            ) {
-                Text(label).monospacedDigit()
-            }
+    func applicationDidBecomeActive(_ notification: Notification) {
+        statusItemController?.ensureStatusItem()
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        statusItemController?.ensureStatusItem()
+        return false
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func recoverStatusItem(_ notification: Notification) {
+        statusItemController?.ensureStatusItem()
+    }
+}
+
+@main
+enum AIMeterApp {
+    @MainActor
+    static func main() {
+        if CommandLine.arguments.contains("--diagnose") {
+            Diagnostics.run()
+            return
         }
-        .menuBarExtraStyle(.window)
+        if let index = CommandLine.arguments.firstIndex(of: "--selftest"),
+           index + 1 < CommandLine.arguments.count {
+            Diagnostics.selfTest(name: CommandLine.arguments[index + 1])
+            return
+        }
+
+        let application = NSApplication.shared
+        let delegate = AppDelegate()
+        application.delegate = delegate
+        application.setActivationPolicy(.accessory)
+        application.run()
+        withExtendedLifetime(delegate) {}
     }
 }
