@@ -41,6 +41,10 @@ rg -q '#selector\(togglePopover' "$controller" || {
   echo "FAIL: gauge click is not wired to the dashboard" >&2
   exit 1
 }
+rg -Uq 'popover\.show\([^)]*relativeTo: sender\.bounds,[^)]*of: sender,[^)]*preferredEdge: \.maxY' "$controller" || {
+  echo "FAIL: popover is not anchored below the flipped status-bar button" >&2
+  exit 1
+}
 rg -q 'private var statusItemController: StatusItemController\?' "$app" || {
   echo "FAIL: app delegate does not retain the status item controller" >&2
   exit 1

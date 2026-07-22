@@ -38,7 +38,7 @@ final class StatusItemController: NSObject {
             object: UserDefaults.standard,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.updateStatusItem() }
+            Task { @MainActor in _ = self?.updateStatusItem() }
         }
     }
 
@@ -52,12 +52,49 @@ final class StatusItemController: NSObject {
         updateStatusItem()
     }
 
-    private func updateStatusItem() {
+    @discardableResult
+    private func updateStatusItem() -> NSStatusItem {
         let result = lifecycle.ensureItem()
         if result.created {
             configure(result.item)
         }
         updateStatusItem(result.item)
+        return result.item
+    }
+
+    func runInteractionSelfTest() -> Bool {
+        let item = updateStatusItem()
+        guard let button = item.button else {
+            print("FAIL: status item has no button")
+            return false
+        }
+        guard button.target === self else {
+            print("FAIL: status item button lost its target")
+            return false
+        }
+        guard button.action == #selector(togglePopover(_:)) else {
+            print("FAIL: status item button lost its action")
+            return false
+        }
+
+        let normallyAnimates = popover.animates
+        popover.animates = false
+        defer { popover.animates = normallyAnimates }
+        togglePopover(button)
+        let opened = popover.isShown
+        let isOnscreen: Bool
+        if let window = popover.contentViewController?.view.window,
+           let screen = window.screen {
+            isOnscreen = screen.frame.contains(window.frame)
+        } else {
+            isOnscreen = false
+        }
+        togglePopover(button)
+        let closed = !popover.isShown
+        if !opened { print("FAIL: popover did not open") }
+        if !isOnscreen { print("FAIL: popover opened outside its screen") }
+        if !closed { print("FAIL: popover did not close") }
+        return opened && isOnscreen && closed
     }
 
     private func configure(_ item: NSStatusItem) {
@@ -109,6 +146,6 @@ final class StatusItemController: NSObject {
         popover.show(
             relativeTo: sender.bounds,
             of: sender,
-            preferredEdge: .minY)
+            preferredEdge: .maxY)
     }
 }

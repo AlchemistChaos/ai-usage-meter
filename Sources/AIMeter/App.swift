@@ -56,6 +56,23 @@ enum AIMeterApp {
             Diagnostics.selfTest(name: CommandLine.arguments[index + 1])
             return
         }
+        if CommandLine.arguments.contains("--status-item-selftest") {
+            let application = NSApplication.shared
+            application.setActivationPolicy(.accessory)
+            let controller = StatusItemController(manager: AccountManager.shared)
+            controller.ensureStatusItem()
+            DispatchQueue.main.async {
+                if controller.runInteractionSelfTest() {
+                    print("PASS: installed status item interaction")
+                } else {
+                    print("FAIL: installed status item interaction")
+                }
+                application.terminate(nil)
+            }
+            application.run()
+            withExtendedLifetime(controller) {}
+            return
+        }
 
         let application = NSApplication.shared
         let delegate = AppDelegate()

@@ -84,7 +84,15 @@ swift build -c release
 bash Tests/DashboardStructureHarness.sh
 bash Tests/NativeGlassStructureHarness.sh
 bash Tests/AppBrandingHarness.sh
+swiftc -parse-as-library Sources/AIMeter/StatusItemLifecycle.swift \
+  Tests/StatusItemLifecycleHarness.swift \
+  -o /tmp/notch-limits-status-item-tests
+/tmp/notch-limits-status-item-tests
+bash Tests/StatusItemStructureHarness.sh
+./build-app.sh release
+AIMETER_APP_PATH="AI Meter.app" bash Tests/InstalledStatusItemHarness.sh
 swiftc Sources/AIMeter/Models.swift \
+  Sources/AIMeter/MenuBarPreferences.swift \
   Sources/AIMeter/AccountPresentation.swift \
   Tests/AccountPresentationHarness.swift \
   -o /tmp/notch-limits-presentation-tests
@@ -101,7 +109,9 @@ swiftc Sources/AIMeter/CodexLogin.swift \
 
 | File | Responsibility |
 |---|---|
-| `App.swift` / `GlassDashboardView.swift` | Menu-bar scene and provider-first dashboard |
+| `App.swift` / `StatusItemController.swift` | App lifecycle, retained menu-bar gauge, and dashboard popover |
+| `StatusItemLifecycle.swift` | Idempotent creation and visibility recovery for the gauge |
+| `GlassDashboardView.swift` | Provider-first dashboard |
 | `NativeGlassBackground.swift` | Clear native glass background that cannot intercept input |
 | `AccountManager.swift` | Refresh loop, account actions, and login coordination |
 | `MenuBarPreferences.swift` | Persistent menu-bar metric selections and compact defaults |
