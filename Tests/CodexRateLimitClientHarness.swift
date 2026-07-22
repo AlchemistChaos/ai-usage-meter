@@ -23,7 +23,19 @@ private func expectThrows(
 
 @main
 enum CodexRateLimitClientHarness {
-    static func main() throws {
+    static func main() async throws {
+        if CommandLine.arguments.contains("--live") {
+            let snapshot = try await CodexRateLimitClient.fetchSnapshot()
+            for window in snapshot.windows {
+                print("LIVE: \(window.label) \(window.usedPercent)% used")
+            }
+            return
+        }
+
+        expect(CodexRateLimitClient.appServerArguments
+               == ["app-server", "--listen", "stdio://"],
+               "client should launch the stdio app-server transport")
+
         let requests = String(
             decoding: CodexRateLimitClient.requestPayload(), as: UTF8.self)
         let requestLines = requests.split(separator: "\n")
@@ -57,6 +69,17 @@ enum CodexRateLimitClientHarness {
         expect(snapshot?.windows.first?.resetsAt
                == Date(timeIntervalSince1970: 1_785_258_211),
                "Unix reset timestamp should become a Date")
+
+        let stream = """
+        {"id":1,"result":{"userAgent":"test"}}
+        {"method":"remoteControl/status/changed","params":{"status":"disabled"}}
+        \(response)
+
+        """
+        let streamSnapshot = try CodexRateLimitClient.decodeSnapshot(
+            fromStream: Data(stream.utf8), capturedAt: capturedAt)
+        expect(streamSnapshot?.windows.first?.usedPercent == 76,
+               "stream decoding should select response ID 2")
 
         let notification = #"{"method":"account/rateLimits/updated","params":{"rateLimits":{"primary":{"usedPercent":75}}}}"#
         let notificationSnapshot = try CodexRateLimitClient.decodeSnapshot(
