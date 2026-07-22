@@ -4,3 +4,4 @@ AI Meter.app/
 dist/
 .DS_Store
 .superpowers/
+.worktrees/
