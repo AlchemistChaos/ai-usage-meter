@@ -45,6 +45,18 @@ rg -Uq 'popover\.show\([^)]*relativeTo: sender\.bounds,[^)]*of: sender,[^)]*pref
   echo "FAIL: popover is not anchored below the flipped status-bar button" >&2
   exit 1
 }
+rg -Fq 'NSWindow.didResizeNotification' "$controller" || {
+  echo "FAIL: popover resizing is not observed" >&2
+  exit 1
+}
+rg -q 'PopoverPlacement\.frame' "$controller" || {
+  echo "FAIL: resized popover is not kept onscreen" >&2
+  exit 1
+}
+rg -q 'DispatchQueue\.main\.asyncAfter' "$controller" || {
+  echo "FAIL: popover placement is not corrected after AppKit settles" >&2
+  exit 1
+}
 rg -q 'private var statusItemController: StatusItemController\?' "$app" || {
   echo "FAIL: app delegate does not retain the status item controller" >&2
   exit 1

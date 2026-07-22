@@ -62,12 +62,14 @@ enum AIMeterApp {
             let controller = StatusItemController(manager: AccountManager.shared)
             controller.ensureStatusItem()
             DispatchQueue.main.async {
-                if controller.runInteractionSelfTest() {
-                    print("PASS: installed status item interaction")
-                } else {
-                    print("FAIL: installed status item interaction")
+                controller.runInteractionSelfTest { passed in
+                    if passed {
+                        print("PASS: installed status item interaction")
+                    } else {
+                        print("FAIL: installed status item interaction")
+                    }
+                    application.terminate(nil)
                 }
-                application.terminate(nil)
             }
             application.run()
             withExtendedLifetime(controller) {}
