@@ -4,6 +4,15 @@ import Foundation
 /// detection can be verified from the terminal.
 enum Diagnostics {
     static func run() {
+        let finished = DispatchSemaphore(value: 0)
+        Task.detached {
+            await runAsync()
+            finished.signal()
+        }
+        finished.wait()
+    }
+
+    private static func runAsync() async {
         print("=== AI Meter diagnostics ===\n")
 
         print("[Codex] active credential: \(ProfileStore.activeCredentialPath(.codex).path())")
@@ -15,15 +24,17 @@ enum Diagnostics {
             print("  no readable Codex credential")
         }
 
-        print("\n[Codex] usage from \(CodexProvider.logsDB.lastPathComponent):")
+        print("\n[Codex] live app-server usage:")
+        do {
+            let snap = try await CodexRateLimitClient.fetchSnapshot()
+            printSnapshot(snap)
+        } catch {
+            print("  unavailable: \(error.localizedDescription)")
+        }
+
+        print("\n[Codex] SQLite fallback usage from \(CodexProvider.logsDB.lastPathComponent):")
         if let snap = CodexProvider.latestSnapshot() {
-            print("  captured: \(snap.capturedAt)")
-            print("  plan:     \(snap.plan ?? "—")")
-            for w in snap.windows {
-                print(String(format: "  %-8@ %5.1f%% used, %d min window, resets in %@",
-                             w.label as NSString, w.usedPercent, w.windowMinutes,
-                             w.resetsInDescription as NSString))
-            }
+            printSnapshot(snap)
         } else {
             print("  no rate-limit headers found in recent logs")
         }
@@ -47,6 +58,19 @@ enum Diagnostics {
         print("[Tokens 7d]    in: \(TokenStats.formatCount(w.week.inputTokens))"
               + "  out: \(TokenStats.formatCount(w.week.outputTokens))"
               + "  ≈\(TokenStats.formatDollars(w.week.apiEquivalentDollars)) API-equivalent")
+    }
+
+    private static func printSnapshot(_ snap: CodexProvider.Snapshot) {
+        print("  captured: \(snap.capturedAt)")
+        print("  plan:     \(snap.plan ?? "—")")
+        for window in snap.windows {
+            print(String(
+                format: "  %-8@ %5.1f%% used, %d min window, resets in %@",
+                window.label as NSString,
+                window.usedPercent,
+                window.windowMinutes,
+                window.resetsInDescription as NSString))
+        }
     }
 }
 

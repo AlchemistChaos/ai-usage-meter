@@ -75,7 +75,7 @@ To print the local credential/data sources detected by the app:
 
 **Claude:** the app polls Anthropic's OAuth usage endpoint for each stored profile at most once every five minutes.
 
-**Codex:** the official CLI records rate-limit headers in its local SQLite log. The app reads the most recent matching record and caches it per account. If an inactive account has no fresh reset timestamp, the UI says it becomes available after using that account instead of inventing a date.
+**Codex:** the app asks the installed official Codex client for the active account's current `account/rateLimits/read` snapshot at most once every five minutes. The request uses Codex's app-server process and existing login; AI Meter never copies the token into its own network client. Legacy rate-limit headers in Codex's local SQLite log remain a fallback and supply the last known reading for inactive accounts. If an inactive account has no fresh reset timestamp, the UI says it becomes available after using that account instead of inventing a date.
 
 ## Build and verify
 
@@ -93,6 +93,7 @@ swiftc -parse-as-library Sources/AIMeter/PopoverPlacement.swift \
   -o /tmp/notch-limits-popover-placement-tests
 /tmp/notch-limits-popover-placement-tests
 bash Tests/StatusItemStructureHarness.sh
+bash Tests/CodexLivePollingStructureHarness.sh
 ./build-app.sh release
 AIMETER_APP_PATH="AI Meter.app" bash Tests/InstalledStatusItemHarness.sh
 swiftc Sources/AIMeter/Models.swift \
@@ -105,6 +106,13 @@ swiftc Sources/AIMeter/CodexLogin.swift \
   Tests/CodexLoginHarness.swift \
   -o /tmp/notch-limits-codex-login-tests
 /tmp/notch-limits-codex-login-tests
+swiftc -parse-as-library Sources/AIMeter/Models.swift \
+  Sources/AIMeter/CodexProvider.swift \
+  Sources/AIMeter/CodexLogin.swift \
+  Sources/AIMeter/CodexRateLimitClient.swift \
+  Tests/CodexRateLimitClientHarness.swift \
+  -lsqlite3 -o /tmp/notch-limits-codex-rate-limit-tests
+/tmp/notch-limits-codex-rate-limit-tests
 ```
 
 `./build-app.sh release` creates an ad-hoc signed local bundle by default. Set `AIMETER_SIGN_IDENTITY` to a Developer ID identity for distribution builds.
@@ -127,7 +135,7 @@ swiftc Sources/AIMeter/CodexLogin.swift \
 ## Limitations
 
 - Claude CLI switching is deliberately unsupported because it would require modifying Claude's own credential state.
-- Codex can only show data previously recorded while that account was active and used.
+- Codex polls only the active account live; inactive accounts show their most recently cached reading.
 - The compact default shows Claude's 5-hour and Codex's weekly capacity. Use Settings → Menu bar to toggle Claude 5-hour, Claude weekly, and Codex weekly independently.
 - A selected menu-bar value displays `—` when that exact provider window is unavailable; it never substitutes a different window.
 - Locally built/ad-hoc signed apps are intended for your own Mac; public downloads should be Developer ID signed and notarized.

@@ -3,6 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 manager="Sources/AIMeter/AccountManager.swift"
+diagnostics="Sources/AIMeter/Diagnostics.swift"
+readme="README.md"
 
 require() {
   local pattern="$1"
@@ -29,5 +31,18 @@ require '(?s)SnapshotCache\.put\(.*?accountID: requestedAccountID,.*?snapshot: s
   "the live snapshot is not cached for its requested account"
 require 'CodexProvider\.latestSnapshot\(\)' \
   "the SQLite fallback was removed"
+
+rg -Fq '[Codex] live app-server usage:' "$diagnostics" || {
+  echo "FAIL: diagnostics do not identify live app-server usage" >&2
+  exit 1
+}
+rg -Fq '[Codex] SQLite fallback usage' "$diagnostics" || {
+  echo "FAIL: diagnostics do not identify the SQLite fallback" >&2
+  exit 1
+}
+rg -Fq 'account/rateLimits/read' "$readme" || {
+  echo "FAIL: README does not document the live Codex usage source" >&2
+  exit 1
+}
 
 echo "PASS: live Codex polling structure"
