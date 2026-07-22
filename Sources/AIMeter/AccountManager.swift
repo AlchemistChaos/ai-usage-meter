@@ -10,9 +10,15 @@ final class AccountManager: ObservableObject {
     @Published var lastError: String?
 
     private var timer: Timer?
+    /// Codex usage is a live app-server request — poll at most every 5 minutes.
+    private var lastCodexPoll: Date?
+    private var lastCodexPollAccountID: String?
+    private var codexPollInFlightAccountID: String?
+    private var codexUsageError: String?
     /// Claude usage is a real network call — poll at most every 5 minutes.
     private var lastClaudePoll: Date?
     private var claudePollInFlight = false
+    private var claudeUsageError: String?
 
     /// Tokens burned (Claude, machine-wide from local transcripts).
     @Published private(set) var todayTokens = TokenStats()
@@ -33,6 +39,7 @@ final class AccountManager: ObservableObject {
         result.append(contentsOf: claudeAccounts())
         accounts = Self.applyDemoLabels(result)
         lastRefresh = Date()
+        pollCodexUsageIfStale()
         pollClaudeUsageIfStale()
         scanTokensIfStale()
     }
@@ -136,6 +143,54 @@ final class AccountManager: ObservableObject {
         return result
     }
 
+    /// Fetch the active Codex account directly through the installed official
+    /// client. A changed account bypasses the normal five-minute throttle.
+    private func pollCodexUsageIfStale() {
+        guard let identity = CodexProvider.identity(
+            at: ProfileStore.activeCredentialPath(.codex))
+        else { return }
+        let requestedAccountID = identity.accountID
+        let isFreshForAccount = lastCodexPollAccountID == requestedAccountID
+            && (lastCodexPoll.map { -$0.timeIntervalSinceNow <= 300 } ?? false)
+        guard codexPollInFlightAccountID == nil, !isFreshForAccount else { return }
+
+        codexPollInFlightAccountID = requestedAccountID
+        Task { @MainActor in
+            defer {
+                if codexPollInFlightAccountID == requestedAccountID {
+                    codexPollInFlightAccountID = nil
+                }
+            }
+            do {
+                let snapshot = try await CodexRateLimitClient.fetchSnapshot()
+                lastCodexPoll = Date()
+                lastCodexPollAccountID = requestedAccountID
+
+                // The helper authenticated at launch. Never attribute its
+                // response to an account switched in while it was running.
+                guard CodexProvider.identity(
+                    at: ProfileStore.activeCredentialPath(.codex))?.accountID
+                        == requestedAccountID
+                else { return }
+
+                SnapshotCache.put(
+                    accountID: requestedAccountID,
+                    snapshot: snapshot)
+                codexUsageError = nil
+                publishUsageErrors()
+
+                var result = codexAccounts()
+                result.append(contentsOf: claudeAccounts())
+                accounts = Self.applyDemoLabels(result)
+            } catch {
+                lastCodexPoll = Date()
+                lastCodexPollAccountID = requestedAccountID
+                codexUsageError = "Codex: \(error.localizedDescription)"
+                publishUsageErrors()
+            }
+        }
+    }
+
     // MARK: - Claude (app-stored OAuth tokens + live usage endpoint)
 
     private func claudeAccounts() -> [Account] {
@@ -224,12 +279,20 @@ final class AccountManager: ObservableObject {
             }
 
             lastClaudePoll = Date()
-            lastError = failures.isEmpty ? nil : failures.joined(separator: " · ")
+            claudeUsageError = failures.isEmpty
+                ? nil
+                : "Claude: \(failures.joined(separator: " · "))"
+            publishUsageErrors()
             // Rebuild rows without re-triggering the poll.
             var result = codexAccounts()
             result.append(contentsOf: claudeAccounts())
             accounts = Self.applyDemoLabels(result)
         }
+    }
+
+    private func publishUsageErrors() {
+        let errors = [codexUsageError, claudeUsageError].compactMap { $0 }
+        lastError = errors.isEmpty ? nil : errors.joined(separator: " · ")
     }
 
     // MARK: - Claude login flow (add account without touching the CLI)
