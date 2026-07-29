@@ -69,6 +69,15 @@ enum AccountPresentationHarness {
         expect(short?.remainingPercent == 75,
                "5h should expose remaining capacity")
 
+        let fable = window("Fable wk", minutes: 10_080, used: 64)
+        let claudeWithFable = account(
+            .claude, "claude-fable", active: false,
+            windows: [fiveHour, weekly, fable])
+        expect(
+            AccountPresentation.detailWindows(for: claudeWithFable).map(\.label)
+                == ["Weekly", "5h", "Fable wk"],
+            "clicked account detail should include model-specific windows")
+
         let onlyShort = account(
             .codex, "single", active: true, windows: [fiveHour])
         let onlyPrimary = AccountPresentation.primaryWindow(for: onlyShort)

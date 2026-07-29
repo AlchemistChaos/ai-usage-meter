@@ -32,6 +32,17 @@ enum AccountPresentation {
         return short
     }
 
+    static func detailWindows(for account: Account) -> [UsageWindow] {
+        let primary = primaryWindow(for: account)
+        let short = shortWindow(for: account, excluding: primary)
+        var windows = [primary, short].compactMap { $0 }
+        let featuredIDs = Set(windows.map(\.id))
+        windows.append(contentsOf: account.windows.filter {
+            !featuredIDs.contains($0.id)
+        })
+        return windows
+    }
+
     static func activeRemaining(
         for provider: ProviderKind,
         in accounts: [Account]

@@ -102,5 +102,9 @@ if rg -q 'ResetSummary\(window:' "$view"; then
   echo "FAIL: compact reset details should live in the click popover" >&2
   exit 1
 fi
+rg -Fq 'let windows = AccountPresentation.detailWindows(for: account)' "$view" || {
+  echo "FAIL: inactive account detail should include every provider window" >&2
+  exit 1
+}
 
 echo "PASS: dashboard header structure"

@@ -405,11 +405,7 @@ private struct ResetDetailsPopover: View {
     let account: Account
 
     var body: some View {
-        let primary = AccountPresentation.primaryWindow(for: account)
-        let short = AccountPresentation.shortWindow(
-            for: account,
-            excluding: primary)
-        let windows = [primary, short].compactMap { $0 }
+        let windows = AccountPresentation.detailWindows(for: account)
 
         VStack(alignment: .leading, spacing: 9) {
             Text(account.label)
