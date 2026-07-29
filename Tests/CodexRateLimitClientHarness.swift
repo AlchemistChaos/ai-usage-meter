@@ -70,6 +70,41 @@ enum CodexRateLimitClientHarness {
                == Date(timeIntervalSince1970: 1_785_258_211),
                "Unix reset timestamp should become a Date")
 
+        expect(
+            CodexProvider.canAttributeSQLiteFallback(
+                capturedAt: capturedAt,
+                credentialModifiedAt: capturedAt.addingTimeInterval(-1)),
+            "a fallback captured after the active credential was installed should be attributable")
+        expect(
+            !CodexProvider.canAttributeSQLiteFallback(
+                capturedAt: capturedAt,
+                credentialModifiedAt: capturedAt.addingTimeInterval(1)),
+            "a fallback captured before an account switch must not be assigned to the new account")
+
+        let desktopScope = Data("""
+        {
+          "scope": {
+            "user": {
+              "account_id": "desktop-account"
+            }
+          }
+        }
+        """.utf8)
+        expect(
+            CodexProvider.desktopAccountIdentity(from: desktopScope)
+                == "desktop-account",
+            "Codex desktop account identity should be read from its live scope")
+        expect(
+            CodexProvider.activeAccountIdentity(
+                desktopAccountID: "desktop-account",
+                cliAccountID: "cli-account") == "desktop-account",
+            "the running Codex desktop account should take precedence over CLI auth")
+        expect(
+            CodexProvider.activeAccountIdentity(
+                desktopAccountID: nil,
+                cliAccountID: "cli-account") == "cli-account",
+            "CLI auth should remain the fallback when Codex desktop is unavailable")
+
         let stream = """
         {"id":1,"result":{"userAgent":"test"}}
         {"method":"remoteControl/status/changed","params":{"status":"disabled"}}

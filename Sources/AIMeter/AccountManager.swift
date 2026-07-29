@@ -98,29 +98,55 @@ final class AccountManager: ObservableObject {
     private func codexAccounts() -> [Account] {
         var result: [Account] = []
 
-        // Harvest the newest reading and attribute it to whoever is active now.
-        let liveIdentity = CodexProvider.identity(at: ProfileStore.activeCredentialPath(.codex))
-        if let snapshot = CodexProvider.latestSnapshot(), let live = liveIdentity {
+        let liveCredential = ProfileStore.activeCredentialPath(.codex)
+        let liveIdentity = CodexProvider.identity(at: liveCredential)
+
+        // SQLite rows have no account ID. Only use one when it was recorded
+        // after this credential file became active, or an account switch could
+        // make the menu-bar C value show the previous account's reading.
+        let credentialModifiedAt = (try? FileManager.default.attributesOfItem(
+            atPath: liveCredential.path())[.modificationDate]) as? Date
+        if let snapshot = CodexProvider.latestSnapshot(),
+           let live = liveIdentity,
+           let credentialModifiedAt,
+           CodexProvider.canAttributeSQLiteFallback(
+               capturedAt: snapshot.capturedAt,
+               credentialModifiedAt: credentialModifiedAt) {
             SnapshotCache.put(accountID: live.accountID, snapshot: snapshot)
         }
 
-        let activeName = ProfileStore.activeProfileName(.codex)
-
-        // Someone may be logged in without having imported that account yet.
-        if activeName == nil, let live = liveIdentity {
-            result.append(Account(
-                provider: .codex,
-                profileName: live.email ?? "current",
-                email: live.email,
-                plan: live.plan,
-                isActive: true,
-                windows: SnapshotCache.get(accountID: live.accountID)?.projectedWindows() ?? [],
-                status: SnapshotCache.get(accountID: live.accountID)
-                    .map { .live($0.capturedAt) }
-                    ?? .noData(reason: "run Codex once to record limits")))
+        let desktopIsRunning = !NSRunningApplication.runningApplications(
+            withBundleIdentifier: CodexProvider.desktopBundleIdentifier).isEmpty
+        let desktopAccountID = desktopIsRunning
+            ? CodexProvider.desktopAccountIdentity()
+            : nil
+        let activeAccountID = CodexProvider.activeAccountIdentity(
+            desktopAccountID: desktopAccountID,
+            cliAccountID: liveIdentity?.accountID)
+        let profileNames = ProfileStore.listProfiles(.codex)
+        let activeProfileName = profileNames.first { name in
+            CodexProvider.accountIdentity(
+                at: ProfileStore.profileFile(.codex, name)) == activeAccountID
         }
 
-        for name in ProfileStore.listProfiles(.codex) {
+        // Someone may be logged in without having imported that account yet.
+        if activeProfileName == nil, let activeAccountID {
+            let cached = SnapshotCache.get(accountID: activeAccountID)
+            let activeIsCLI = liveIdentity?.accountID == activeAccountID
+            result.append(Account(
+                provider: .codex,
+                profileName: activeIsCLI
+                    ? (liveIdentity?.email ?? "current")
+                    : "Codex desktop",
+                email: activeIsCLI ? liveIdentity?.email : nil,
+                plan: cached?.plan ?? (activeIsCLI ? liveIdentity?.plan : nil),
+                isActive: true,
+                windows: cached?.projectedWindows() ?? [],
+                status: cached.map { .live($0.capturedAt) }
+                    ?? .noData(reason: "use Codex once to record limits")))
+        }
+
+        for name in profileNames {
             let url = ProfileStore.profileFile(.codex, name)
             guard let id = CodexProvider.identity(at: url) else {
                 result.append(Account(
@@ -135,7 +161,7 @@ final class AccountManager: ObservableObject {
                 profileName: name,
                 email: id.email,
                 plan: cached?.plan ?? id.plan,
-                isActive: name == activeName,
+                isActive: id.accountID == activeAccountID,
                 windows: cached?.projectedWindows() ?? [],
                 status: cached.map { .live($0.capturedAt) }
                     ?? .noData(reason: "no reading yet — switch to it and use Codex once")))
@@ -160,6 +186,10 @@ final class AccountManager: ObservableObject {
                 if codexPollInFlightAccountID == requestedAccountID {
                     codexPollInFlightAccountID = nil
                 }
+                // A switch can occur while the old account's helper is still
+                // running. Re-evaluate immediately so the new account does not
+                // wait for the next 30-second refresh timer.
+                pollCodexUsageIfStale()
             }
             do {
                 let snapshot = try await CodexRateLimitClient.fetchSnapshot()

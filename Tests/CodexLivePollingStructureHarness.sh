@@ -31,6 +31,16 @@ require '(?s)SnapshotCache\.put\(.*?accountID: requestedAccountID,.*?snapshot: s
   "the live snapshot is not cached for its requested account"
 require 'CodexProvider\.latestSnapshot\(\)' \
   "the SQLite fallback was removed"
+require '(?s)CodexProvider\.latestSnapshot\(\).*?canAttributeSQLiteFallback' \
+  "the unscoped SQLite fallback can be assigned across a Codex account switch"
+require '(?s)defer\s*\{.*?codexPollInFlightAccountID\s*=\s*nil.*?pollCodexUsageIfStale\(\)' \
+  "a Codex account switch during an in-flight poll does not schedule the new account"
+require '(?s)NSRunningApplication\.runningApplications\(.*?withBundleIdentifier:\s*CodexProvider\.desktopBundleIdentifier\)' \
+  "the manager does not detect the running Codex desktop app"
+require 'CodexProvider\.desktopAccountIdentity\(\)' \
+  "the manager does not read the Codex desktop app account"
+require '(?s)activeAccountID.*?id\.accountID\s*==\s*activeAccountID' \
+  "saved Codex rows are not activated from the desktop app identity"
 
 rg -Fq '[Codex] live app-server usage:' "$diagnostics" || {
   echo "FAIL: diagnostics do not identify live app-server usage" >&2

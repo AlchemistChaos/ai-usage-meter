@@ -11,6 +11,8 @@ enum CodexProvider {
 
     // MARK: - Identity
 
+    static let desktopBundleIdentifier = "com.openai.codex"
+
     struct Identity {
         let accountID: String
         let email: String?
@@ -46,6 +48,43 @@ enum CodexProvider {
     /// Stable identity string used to tell profiles apart.
     static func accountIdentity(at url: URL) -> String? {
         identity(at: url)?.accountID
+    }
+
+    /// The Codex desktop app can inject ChatGPT auth into its long-lived
+    /// app-server without replacing ~/.codex/auth.json. Its live Sentry scope
+    /// records the account ID that process is actually using.
+    static func desktopAccountIdentity() -> String? {
+        let scope = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: "Library/Application Support/Codex/sentry/scope_v3.json")
+        guard let data = try? Data(contentsOf: scope) else { return nil }
+        return desktopAccountIdentity(from: data)
+    }
+
+    static func desktopAccountIdentity(from data: Data) -> String? {
+        guard let root = try? JSONSerialization.jsonObject(with: data)
+                as? [String: Any],
+              let scope = root["scope"] as? [String: Any],
+              let user = scope["user"] as? [String: Any]
+        else { return nil }
+        return user["account_id"] as? String
+    }
+
+    static func activeAccountIdentity(
+        desktopAccountID: String?,
+        cliAccountID: String?
+    ) -> String? {
+        desktopAccountID ?? cliAccountID
+    }
+
+    /// SQLite rate-limit rows do not carry an account ID. A row can only be
+    /// attributed to the active credential when it was recorded after that
+    /// credential file was installed; otherwise it may belong to the account
+    /// that was active immediately before a switch.
+    static func canAttributeSQLiteFallback(
+        capturedAt: Date,
+        credentialModifiedAt: Date
+    ) -> Bool {
+        capturedAt >= credentialModifiedAt
     }
 
     private static func decodeJWTPayload(_ jwt: String) -> [String: Any]? {
