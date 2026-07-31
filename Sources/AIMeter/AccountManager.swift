@@ -19,6 +19,8 @@ final class AccountManager: ObservableObject {
     private var lastClaudePoll: Date?
     private var claudePollInFlight = false
     private var claudeUsageError: String?
+    private let timelineStore = try? AccountTimelineStore.open(
+        at: ProfileStore.root.appending(path: "account-timeline.sqlite"))
 
     /// Tokens burned (Claude, machine-wide from local transcripts).
     @Published private(set) var todayTokens = TokenStats()
@@ -38,6 +40,7 @@ final class AccountManager: ObservableObject {
         var result = codexAccounts()
         result.append(contentsOf: claudeAccounts())
         accounts = Self.applyDemoLabels(result)
+        observeActiveAccounts()
         lastRefresh = Date()
         pollCodexUsageIfStale()
         pollClaudeUsageIfStale()
@@ -91,6 +94,27 @@ final class AccountManager: ObservableObject {
         weekTokens = week
         lastTokenScan = Date()
         tokenScanInFlight = false
+    }
+
+    private func observeActiveAccounts() {
+        if let claudeAccountID = ClaudeProvider.identity()?.accountUuid {
+            try? timelineStore?.observe(
+                provider: .claude,
+                accountID: claudeAccountID,
+                at: Date())
+        }
+
+        let liveCredential = ProfileStore.activeCredentialPath(.codex)
+        let cliAccountID = CodexProvider.identity(at: liveCredential)?.accountID
+        let desktopAccountID = CodexProvider.desktopAccountIdentity()
+        if let codexAccountID = CodexProvider.activeAccountIdentity(
+            desktopAccountID: desktopAccountID,
+            cliAccountID: cliAccountID) {
+            try? timelineStore?.observe(
+                provider: .codex,
+                accountID: codexAccountID,
+                at: Date())
+        }
     }
 
     // MARK: - Codex (local: JWT + sqlite log harvest)

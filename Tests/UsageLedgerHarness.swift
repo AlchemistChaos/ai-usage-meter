@@ -16,6 +16,8 @@ enum UsageLedgerHarness {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("ai-meter-usage-ledger-\(UUID().uuidString)")
         let ledger = try UsageLedger.open(at: root.appendingPathComponent("usage.sqlite"))
+        let timeline = try AccountTimelineStore.open(
+            at: root.appendingPathComponent("timeline.sqlite"))
 
         try ledger.upsert(event: .init(
             externalID: "claude:session-1:event-1",
@@ -58,6 +60,28 @@ enum UsageLedgerHarness {
         expect(
             checkpoint?.cursor == "file.jsonl:128",
             "checkpoint cursor should round-trip")
+
+        let t0 = Date(timeIntervalSince1970: 1_785_100_000)
+        let t1 = t0.addingTimeInterval(60)
+        let t2 = t1.addingTimeInterval(60)
+
+        try timeline.observe(provider: .claude, accountID: "a", at: t0)
+        try timeline.observe(provider: .claude, accountID: "a", at: t1)
+        try timeline.observe(provider: .claude, accountID: "b", at: t2)
+
+        let firstAccount = try timeline.accountID(
+            for: .claude,
+            timestamp: t0.addingTimeInterval(30))
+        expect(
+            firstAccount == "a",
+            "lookup inside the first span should return account a")
+
+        let secondAccount = try timeline.accountID(
+            for: .claude,
+            timestamp: t2.addingTimeInterval(1))
+        expect(
+            secondAccount == "b",
+            "lookup after rollover should return account b")
 
         print("PASS: usage ledger")
     }
