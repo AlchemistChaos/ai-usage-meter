@@ -129,6 +129,11 @@ enum ClaudeProvider {
             plan: id["plan"].flatMap { $0.isEmpty ? nil : $0 })
     }
 
+    static func soleStoredAccountUUID(from profiles: [StoredProfile]) -> String? {
+        guard profiles.count == 1 else { return nil }
+        return profiles.first?.accountUuid
+    }
+
     // MARK: - Per-profile tokens (multi-account polling)
 
     /// Claude Code's public OAuth client id, needed for the refresh grant.

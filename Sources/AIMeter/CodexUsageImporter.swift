@@ -10,7 +10,16 @@ struct CodexUsageImporter {
         guard FileManager.default.fileExists(atPath: logsDB.path()) else { return }
         let since = try ledger.checkpoint(source: "codex-sse")
             .flatMap { Int64($0.cursor) } ?? 0
-        for row in try usageRows(afterID: since) {
+        for rawRow in try rawUsageRows(afterID: since) {
+            defer {
+                try? ledger.saveCheckpoint(source: "codex-sse", cursor: String(rawRow.logID))
+            }
+            guard let row = try? decodeUsage(
+                from: rawRow.body,
+                logID: rawRow.logID,
+                timestamp: rawRow.timestamp
+            ) else { continue }
+
             let attributed = try attributedAccount(for: row.timestamp)
             try ledger.upsert(event: .init(
                 externalID: "codex:\(row.responseID)",
@@ -24,7 +33,6 @@ struct CodexUsageImporter {
                 totalTokens: row.totalTokens,
                 source: "codex-sse",
                 attribution: attributed.attribution))
-            try ledger.saveCheckpoint(source: "codex-sse", cursor: String(row.logID))
         }
     }
 
@@ -48,7 +56,13 @@ struct CodexUsageImporter {
         let totalTokens: Int
     }
 
-    private func usageRows(afterID since: Int64) throws -> [UsageRow] {
+    private struct RawUsageRow {
+        let logID: Int64
+        let timestamp: Date
+        let body: String
+    }
+
+    private func rawUsageRows(afterID since: Int64) throws -> [RawUsageRow] {
         var db: OpaquePointer?
         guard sqlite3_open_v2(logsDB.path(), &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
               let db else {
@@ -70,18 +84,16 @@ struct CodexUsageImporter {
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_int64(stmt, 1, since)
 
-        var rows: [UsageRow] = []
+        var rows: [RawUsageRow] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             let logID = sqlite3_column_int64(stmt, 0)
-            let timestamp = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(stmt, 1)))
+            let timestamp = CodexProvider.normaliseTimestamp(
+                Double(sqlite3_column_int64(stmt, 1))) ?? Date()
             guard let bodyText = sqlite3_column_text(stmt, 2) else { continue }
-            if let row = try decodeUsage(
-                from: String(cString: bodyText),
+            rows.append(.init(
                 logID: logID,
-                timestamp: timestamp
-            ) {
-                rows.append(row)
-            }
+                timestamp: timestamp,
+                body: String(cString: bodyText)))
         }
         return rows
     }

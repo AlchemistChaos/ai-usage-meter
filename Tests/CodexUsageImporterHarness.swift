@@ -44,13 +44,27 @@ private enum CodexUsageImporterHarnessData {
             ts, ts_nanos, level, target, feedback_log_body,
             module_path, file, line, thread_id, process_uuid, estimated_bytes
         ) VALUES (
-            1785100030, 0, 'INFO', 'codex_api::sse::responses',
-            'SSE event: {"type":"response.completed","response":{"id":"resp-1","usage":{"input_tokens":300,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":0},"output_tokens":40,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":340}}}',
-            'mod', 'file', 1, 'thread-1', 'proc-1', 0
+            1785100020000, 0, 'INFO', 'codex_api::sse::responses',
+            'SSE event: {"type":"response.completed","response":{"id":"resp-bad","usage":',
+            'mod', 'file', 1, 'thread-bad', 'proc-bad', 0
         );
         """
         guard sqlite3_exec(db, row, nil, nil, nil) == SQLITE_OK else {
             throw NSError(domain: "CodexUsageImporterHarness", code: 3)
+        }
+
+        let goodRow = """
+        INSERT INTO logs (
+            ts, ts_nanos, level, target, feedback_log_body,
+            module_path, file, line, thread_id, process_uuid, estimated_bytes
+        ) VALUES (
+            1785100030000, 0, 'INFO', 'codex_api::sse::responses',
+            'SSE event: {"type":"response.completed","response":{"id":"resp-1","usage":{"input_tokens":300,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":0},"output_tokens":40,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":340}}}',
+            'mod', 'file', 1, 'thread-1', 'proc-1', 0
+        );
+        """
+        guard sqlite3_exec(db, goodRow, nil, nil, nil) == SQLITE_OK else {
+            throw NSError(domain: "CodexUsageImporterHarness", code: 4)
         }
     }
 }

@@ -34,6 +34,12 @@ enum AccountTimelineStore {
         ) throws {
             let current = try latestSpan(for: provider)
             if let current, current.accountID == accountID, current.endedAt == nil {
+                let update = try prepare(
+                    "UPDATE account_spans SET last_confirmed_at = ? WHERE id = ?")
+                defer { sqlite3_finalize(update) }
+                sqlite3_bind_double(update, 1, date.timeIntervalSince1970)
+                sqlite3_bind_int64(update, 2, current.id)
+                try stepDone(update)
                 return
             }
 
@@ -41,17 +47,22 @@ enum AccountTimelineStore {
                 let update = try prepare(
                     "UPDATE account_spans SET ended_at = ? WHERE id = ?")
                 defer { sqlite3_finalize(update) }
-                sqlite3_bind_double(update, 1, date.timeIntervalSince1970)
+                sqlite3_bind_double(update, 1, current.lastConfirmedAt.timeIntervalSince1970)
                 sqlite3_bind_int64(update, 2, current.id)
                 try stepDone(update)
             }
 
             let insert = try prepare(
-                "INSERT INTO account_spans (provider, account_id, started_at, ended_at) VALUES (?, ?, ?, NULL)")
+                """
+                INSERT INTO account_spans (
+                    provider, account_id, started_at, last_confirmed_at, ended_at
+                ) VALUES (?, ?, ?, ?, NULL)
+                """)
             defer { sqlite3_finalize(insert) }
             sqlite3_bind_text(insert, 1, provider.rawValue, -1, sqliteTransientTimeline)
             sqlite3_bind_text(insert, 2, accountID, -1, sqliteTransientTimeline)
             sqlite3_bind_double(insert, 3, date.timeIntervalSince1970)
+            sqlite3_bind_double(insert, 4, date.timeIntervalSince1970)
             try stepDone(insert)
         }
 
@@ -86,13 +97,14 @@ enum AccountTimelineStore {
         private struct Span {
             let id: Int64
             let accountID: String
+            let lastConfirmedAt: Date
             let endedAt: Date?
         }
 
         private func latestSpan(for provider: ProviderKind) throws -> Span? {
             let stmt = try prepare(
                 """
-                SELECT id, account_id, ended_at
+                SELECT id, account_id, last_confirmed_at, ended_at
                 FROM account_spans
                 WHERE provider = ?
                 ORDER BY started_at DESC, id DESC
@@ -108,14 +120,15 @@ enum AccountTimelineStore {
                 throw error("failed to read latest timeline span")
             }
             let endedAt: Date?
-            if sqlite3_column_type(stmt, 2) == SQLITE_NULL {
+            if sqlite3_column_type(stmt, 3) == SQLITE_NULL {
                 endedAt = nil
             } else {
-                endedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 2))
+                endedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))
             }
             return Span(
                 id: sqlite3_column_int64(stmt, 0),
                 accountID: String(cString: accountText),
+                lastConfirmedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 2)),
                 endedAt: endedAt)
         }
 
@@ -174,6 +187,7 @@ private extension AccountTimelineStore.SQLiteStore {
               provider TEXT NOT NULL,
               account_id TEXT NOT NULL,
               started_at REAL NOT NULL,
+              last_confirmed_at REAL NOT NULL DEFAULT 0,
               ended_at REAL
             )
             """,
@@ -186,6 +200,24 @@ private extension AccountTimelineStore.SQLiteStore {
             guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else {
                 throw error("failed to bootstrap account timeline")
             }
+        }
+        _ = sqlite3_exec(
+            db,
+            "ALTER TABLE account_spans ADD COLUMN last_confirmed_at REAL NOT NULL DEFAULT 0",
+            nil,
+            nil,
+            nil)
+        guard sqlite3_exec(
+            db,
+            """
+            UPDATE account_spans
+            SET last_confirmed_at = started_at
+            WHERE last_confirmed_at = 0
+            """,
+            nil,
+            nil,
+            nil) == SQLITE_OK else {
+            throw error("failed to backfill account timeline confirmations")
         }
     }
 }

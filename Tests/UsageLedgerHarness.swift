@@ -83,6 +83,13 @@ enum UsageLedgerHarness {
             secondAccount == "b",
             "lookup after rollover should return account b")
 
+        let uncertainAccount = try timeline.accountID(
+            for: .claude,
+            timestamp: t1.addingTimeInterval(30))
+        expect(
+            uncertainAccount == nil,
+            "switch boundary gap should remain unattributed")
+
         print("PASS: usage ledger")
     }
 }

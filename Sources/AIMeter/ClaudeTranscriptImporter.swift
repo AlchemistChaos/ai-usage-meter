@@ -29,7 +29,11 @@ struct ClaudeTranscriptImporter {
     private func importTranscript(_ url: URL) throws {
         let data = try Data(contentsOf: url)
         for line in data.split(separator: UInt8(ascii: "\n")) where !line.isEmpty {
-            try importLine(Data(line))
+            do {
+                try importLine(Data(line))
+            } catch {
+                continue
+            }
         }
     }
 

@@ -170,15 +170,20 @@ final class AccountManager: ObservableObject {
         let projectsRoot = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: ".claude/projects")
         let logsDB = CodexProvider.logsDB
-        weak var manager = self
+        let manager = self
 
         Task.detached(priority: .utility) {
+            let storedProfiles = ClaudeProvider.listProfiles().map {
+                ClaudeProvider.storedProfile($0)
+            }
             try? ClaudeTranscriptImporter(
                 projectsRoot: projectsRoot,
                 ledger: usageLedger,
                 timeline: timelineStore,
-                knownProfileCount: { ClaudeProvider.listProfiles().count },
-                singleKnownAccountID: { ClaudeProvider.identity()?.accountUuid }
+                knownProfileCount: { storedProfiles.count },
+                singleKnownAccountID: {
+                    ClaudeProvider.soleStoredAccountUUID(from: storedProfiles)
+                }
             ).run()
 
             try? CodexUsageImporter(
@@ -188,9 +193,9 @@ final class AccountManager: ObservableObject {
             ).run()
 
             await MainActor.run {
-                manager?.lastUsageImport = Date()
-                manager?.usageImportInFlight = false
-                manager?.rebuildAccounts()
+                manager.lastUsageImport = Date()
+                manager.usageImportInFlight = false
+                manager.rebuildAccounts()
             }
         }
     }

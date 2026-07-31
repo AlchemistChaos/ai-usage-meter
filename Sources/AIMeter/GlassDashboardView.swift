@@ -333,6 +333,11 @@ private struct TokenSummaryRow: View {
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+            if stats.attribution != .observedActiveSpan {
+                Text(stats.attribution == .singleProfileFallback ? "fallback" : "unattributed")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.orange)
+            }
             Spacer()
         }
     }

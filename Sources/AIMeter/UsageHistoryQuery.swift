@@ -78,18 +78,31 @@ struct UsageHistoryQuery {
         now: Date
     ) throws -> AttributedTokenStats {
         let bounds = dateBounds(for: preset, now: now)
-        let total = try ledger.totals(
+        let rows = try ledger.events(
             provider: provider,
             accountID: accountID,
             start: bounds.start,
             end: bounds.end)
+        let total = rows.reduce(into: AttributedTokenStats()) { result, row in
+            result.inputTokens += row.inputTokens
+            result.outputTokens += row.outputTokens
+            result.cacheWriteTokens += row.cacheWriteTokens
+            result.cacheReadTokens += row.cacheReadTokens
+            result.totalTokens += row.totalTokens
+            result.attribution = weakerAttribution(
+                result.totalTokens == row.totalTokens ? nil : result.attribution,
+                row.attribution)
+        }
+        guard total.totalTokens > 0 else {
+            return AttributedTokenStats(attribution: .unattributed)
+        }
         return AttributedTokenStats(
             inputTokens: total.inputTokens,
             outputTokens: total.outputTokens,
             cacheWriteTokens: total.cacheWriteTokens,
             cacheReadTokens: total.cacheReadTokens,
             totalTokens: total.totalTokens,
-            attribution: accountID == nil ? .unattributed : .observedActiveSpan)
+            attribution: total.attribution)
     }
 
     private func bucketedPoints(
@@ -137,7 +150,7 @@ struct UsageHistoryQuery {
         case .day:
             var dates: [Date] = []
             var current = bucketStart(for: bounds.start, kind: .day)
-            let end = bucketStart(for: bounds.end, kind: .day)
+            let end = lastIncludedBucketStart(bounds: bounds)
             while current <= end {
                 dates.append(current)
                 current = cal.date(byAdding: .day, value: 1, to: current)!
@@ -146,7 +159,7 @@ struct UsageHistoryQuery {
         case .month:
             var dates: [Date] = []
             var current = bucketStart(for: bounds.start, kind: .month)
-            let end = bucketStart(for: bounds.end, kind: .month)
+            let end = lastIncludedBucketStart(bounds: bounds)
             while current <= end {
                 dates.append(current)
                 current = cal.date(byAdding: .month, value: 1, to: current)!
@@ -169,6 +182,33 @@ struct UsageHistoryQuery {
         }
     }
 
+    private func lastIncludedBucketStart(
+        bounds: (start: Date, end: Date, bucket: BucketKind)
+    ) -> Date {
+        let endExclusive = bounds.end.addingTimeInterval(-0.001)
+        switch bounds.bucket {
+        case .hour:
+            return bucketStart(for: endExclusive, kind: .hour)
+        case .day:
+            return bucketStart(for: endExclusive, kind: .day)
+        case .month:
+            return bucketStart(for: endExclusive, kind: .month)
+        }
+    }
+
+    private func weakerAttribution(
+        _ current: TokenAttribution?,
+        _ next: TokenAttribution
+    ) -> TokenAttribution {
+        guard let current else { return next }
+        let rank: [TokenAttribution: Int] = [
+            .observedActiveSpan: 2,
+            .singleProfileFallback: 1,
+            .unattributed: 0,
+        ]
+        return (rank[next] ?? 0) < (rank[current] ?? 0) ? next : current
+    }
+
     private func dateBounds(
         for preset: RangePreset,
         now: Date
@@ -180,9 +220,11 @@ struct UsageHistoryQuery {
         case .last24Hours:
             return (now.addingTimeInterval(-24 * 3600), now, .hour)
         case .last7Days:
-            return (now.addingTimeInterval(-7 * 86_400), now, .day)
+            let start = cal.date(byAdding: .day, value: -6, to: cal.startOfDay(for: now))!
+            return (start, now, .day)
         case .last30Days:
-            return (now.addingTimeInterval(-30 * 86_400), now, .day)
+            let start = cal.date(byAdding: .day, value: -29, to: cal.startOfDay(for: now))!
+            return (start, now, .day)
         case .thisMonth:
             let start = cal.date(from: cal.dateComponents([.year, .month], from: now))!
             return (start, now, .day)

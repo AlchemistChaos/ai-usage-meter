@@ -146,7 +146,7 @@ enum CodexProvider {
         return parseHeaders(from: body, capturedAt: captured)
     }
 
-    private static func normaliseTimestamp(_ raw: Double) -> Date? {
+    static func normaliseTimestamp(_ raw: Double) -> Date? {
         guard raw > 0 else { return nil }
         // Try seconds, then ms, then ns — accept whatever lands in a sane range.
         for divisor in [1.0, 1_000.0, 1_000_000_000.0] {

@@ -41,7 +41,7 @@ enum UsageHistoryHarness {
             cacheReadTokens: 0,
             totalTokens: 60,
             source: "codex-sse",
-            attribution: .observedActiveSpan))
+            attribution: .singleProfileFallback))
 
         let query = UsageHistoryQuery(ledger: ledger)
         let hourly = try query.series(
@@ -53,12 +53,27 @@ enum UsageHistoryHarness {
         expect(hourly.points.contains(where: { $0.inputTokens == 100 }), "hourly series should include first bucket")
         expect(hourly.points.contains(where: { $0.inputTokens == 50 }), "hourly series should include second bucket")
 
+        let sevenDay = try query.series(
+            provider: .codex,
+            accountID: "codex-a",
+            preset: .last7Days,
+            now: ISO8601DateFormatter().date(from: "2026-07-31T12:00:00Z")!)
+        expect(sevenDay.points.count == 7, "7d preset should emit 7 daily buckets")
+
+        let thirtyDay = try query.series(
+            provider: .codex,
+            accountID: "codex-a",
+            preset: .last30Days,
+            now: ISO8601DateFormatter().date(from: "2026-07-31T12:00:00Z")!)
+        expect(thirtyDay.points.count == 30, "30d preset should emit 30 daily buckets")
+
         let snapshot = try query.snapshot(
             provider: .codex,
             accountID: "codex-a",
             now: ISO8601DateFormatter().date(from: "2026-07-31T12:00:00Z")!)
         expect(snapshot.today.inputTokens == 150, "today total should sum both rows")
         expect(snapshot.last24Hours.inputTokens == 150, "24h total should sum both rows")
+        expect(snapshot.today.attribution == .singleProfileFallback, "named totals should preserve the weakest attribution confidence")
 
         print("PASS: usage history query")
     }

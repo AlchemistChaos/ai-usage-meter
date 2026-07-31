@@ -35,6 +35,7 @@ enum UsageLedger {
         let cacheWriteTokens: Int
         let cacheReadTokens: Int
         let totalTokens: Int
+        let attribution: TokenAttribution
     }
 
     struct ImportCheckpoint: Equatable {
@@ -196,7 +197,8 @@ enum UsageLedger {
                     output_tokens,
                     cache_write_tokens,
                     cache_read_tokens,
-                    total_tokens
+                    total_tokens,
+                    attribution
                 FROM usage_events
                 WHERE provider = ?
                   AND \(accountClause)
@@ -224,7 +226,10 @@ enum UsageLedger {
                     outputTokens: Int(sqlite3_column_int64(stmt, 2)),
                     cacheWriteTokens: Int(sqlite3_column_int64(stmt, 3)),
                     cacheReadTokens: Int(sqlite3_column_int64(stmt, 4)),
-                    totalTokens: Int(sqlite3_column_int64(stmt, 5))))
+                    totalTokens: Int(sqlite3_column_int64(stmt, 5)),
+                    attribution: TokenAttribution(
+                        rawValue: String(cString: sqlite3_column_text(stmt, 6))
+                    ) ?? .unattributed))
             }
             return rows
         }
