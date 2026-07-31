@@ -12,6 +12,7 @@ private struct DashboardContentHeightKey: PreferenceKey {
 struct GlassDashboardView: View {
     @ObservedObject var manager: AccountManager
     @State private var contentHeight: CGFloat = 360
+    @State private var selectedHistoryAccount: Account?
     @AppStorage(MenuBarPreferenceKey.claudeFiveHour)
     private var showsClaudeFiveHour = MenuBarSelection.standard.showsClaudeFiveHour
     @AppStorage(MenuBarPreferenceKey.claudeWeekly)
@@ -31,7 +32,8 @@ struct GlassDashboardView: View {
                     ProviderGlassSection(
                         group: group,
                         manager: manager,
-                        columns: columns)
+                        columns: columns,
+                        onHistory: { selectedHistoryAccount = $0 })
                 }
                 if hasTransientStatus {
                     DashboardTransientStatus(manager: manager)
@@ -67,6 +69,13 @@ struct GlassDashboardView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .sheet(item: $selectedHistoryAccount) { selected in
+            UsageHistoryView(
+                account: selected,
+                hourlySeries: manager.historySeries(for: selected, preset: .last24Hours),
+                dailySeries: manager.historySeries(for: selected, preset: .last30Days),
+                monthlySeries: manager.historySeries(for: selected, preset: .thisYear))
+        }
     }
 
     private var hasTransientStatus: Bool {
@@ -167,6 +176,7 @@ private struct ProviderGlassSection: View {
     let group: ProviderAccountGroup
     @ObservedObject var manager: AccountManager
     let columns: [GridItem]
+    let onHistory: (Account) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -174,7 +184,9 @@ private struct ProviderGlassSection: View {
                 .padding(.horizontal, 2)
 
             if let active = group.active {
-                ActiveAccountCard(account: active)
+                ActiveAccountCard(account: active) {
+                    onHistory(active)
+                }
             }
 
             if !group.inactive.isEmpty {
@@ -246,6 +258,7 @@ private struct ProviderHeader: View {
 
 private struct ActiveAccountCard: View {
     let account: Account
+    let onHistory: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -262,6 +275,10 @@ private struct ActiveAccountCard: View {
                     .help(account.label)
                 PlanBadge(plan: account.plan)
                 Spacer()
+                Button("History") { onHistory() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
                 Text(account.status.description)
                     .font(.system(size: 9))
                     .foregroundStyle(.secondary)
@@ -276,6 +293,17 @@ private struct ActiveAccountCard: View {
                     ActiveWindowRow(window: window)
                 }
             }
+
+            if account.hasAttributedTokens {
+                VStack(alignment: .leading, spacing: 4) {
+                    TokenSummaryRow(title: "Today", stats: account.todayTokens)
+                    TokenSummaryRow(title: "24h", stats: account.last24HoursTokens)
+                    TokenSummaryRow(title: "7d", stats: account.last7DaysTokens)
+                    TokenSummaryRow(title: "Month", stats: account.thisMonthTokens)
+                    TokenSummaryRow(title: "Year", stats: account.thisYearTokens)
+                }
+                .padding(.top, 2)
+            }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 8)
@@ -285,6 +313,28 @@ private struct ActiveAccountCard: View {
                 .stroke(.white.opacity(0.065), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+}
+
+private struct TokenSummaryRow: View {
+    let title: String
+    let stats: AttributedTokenStats
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 34, alignment: .leading)
+            Text("in \(TokenStats.formatCount(stats.inputTokens))")
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+            Text("out \(TokenStats.formatCount(stats.outputTokens))")
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            Spacer()
+        }
     }
 }
 

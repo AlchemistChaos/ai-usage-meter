@@ -21,6 +21,10 @@ final class AccountManager: ObservableObject {
     private var claudeUsageError: String?
     private let timelineStore = try? AccountTimelineStore.open(
         at: ProfileStore.root.appending(path: "account-timeline.sqlite"))
+    private let usageLedger = try? UsageLedger.open(
+        at: ProfileStore.root.appending(path: "usage.sqlite"))
+    private var lastUsageImport: Date?
+    private var usageImportInFlight = false
 
     /// Tokens burned (Claude, machine-wide from local transcripts).
     @Published private(set) var todayTokens = TokenStats()
@@ -37,13 +41,12 @@ final class AccountManager: ObservableObject {
     }
 
     func refresh() {
-        var result = codexAccounts()
-        result.append(contentsOf: claudeAccounts())
-        accounts = Self.applyDemoLabels(result)
+        rebuildAccounts()
         observeActiveAccounts()
         lastRefresh = Date()
         pollCodexUsageIfStale()
         pollClaudeUsageIfStale()
+        importUsageIfStale()
         scanTokensIfStale()
     }
 
@@ -94,6 +97,102 @@ final class AccountManager: ObservableObject {
         weekTokens = week
         lastTokenScan = Date()
         tokenScanInFlight = false
+    }
+
+    private func rebuildAccounts() {
+        var result = codexAccounts()
+        result.append(contentsOf: claudeAccounts())
+        accounts = Self.applyDemoLabels(enrichAccounts(result))
+    }
+
+    private func enrichAccounts(_ accounts: [Account]) -> [Account] {
+        accounts.map { account in
+            let snapshot = usageSnapshot(for: account)
+            return Account(
+                provider: account.provider,
+                profileName: account.profileName,
+                email: account.email,
+                plan: account.plan,
+                isActive: account.isActive,
+                windows: account.windows,
+                status: account.status,
+                usageAccountID: account.usageAccountID,
+                todayTokens: snapshot.today,
+                last24HoursTokens: snapshot.last24Hours,
+                last7DaysTokens: snapshot.last7Days,
+                thisMonthTokens: snapshot.thisMonth,
+                thisYearTokens: snapshot.thisYear)
+        }
+    }
+
+    private func usageSnapshot(for account: Account) -> UsageHistoryQuery.HistorySnapshot {
+        guard let usageLedger else { return emptyUsageSnapshot() }
+        let query = UsageHistoryQuery(ledger: usageLedger)
+        return (try? query.snapshot(
+            provider: account.provider,
+            accountID: account.usageAccountID,
+            now: Date())) ?? emptyUsageSnapshot()
+    }
+
+    private func emptyUsageSnapshot() -> UsageHistoryQuery.HistorySnapshot {
+        .init(
+            today: AttributedTokenStats(),
+            last24Hours: AttributedTokenStats(),
+            last7Days: AttributedTokenStats(),
+            last30Days: AttributedTokenStats(),
+            thisMonth: AttributedTokenStats(),
+            thisYear: AttributedTokenStats())
+    }
+
+    func historySeries(
+        for account: Account,
+        preset: UsageHistoryQuery.RangePreset
+    ) -> UsageHistoryQuery.Series {
+        guard let usageLedger else {
+            return .init(preset: preset, points: [])
+        }
+        let query = UsageHistoryQuery(ledger: usageLedger)
+        return (try? query.series(
+            provider: account.provider,
+            accountID: account.usageAccountID,
+            preset: preset,
+            now: Date())) ?? .init(preset: preset, points: [])
+    }
+
+    private func importUsageIfStale() {
+        guard !usageImportInFlight,
+              lastUsageImport.map({ -$0.timeIntervalSinceNow > 60 }) ?? true,
+              let usageLedger,
+              let timelineStore
+        else { return }
+
+        usageImportInFlight = true
+        let projectsRoot = FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: ".claude/projects")
+        let logsDB = CodexProvider.logsDB
+        weak var manager = self
+
+        Task.detached(priority: .utility) {
+            try? ClaudeTranscriptImporter(
+                projectsRoot: projectsRoot,
+                ledger: usageLedger,
+                timeline: timelineStore,
+                knownProfileCount: { ClaudeProvider.listProfiles().count },
+                singleKnownAccountID: { ClaudeProvider.identity()?.accountUuid }
+            ).run()
+
+            try? CodexUsageImporter(
+                logsDB: logsDB,
+                ledger: usageLedger,
+                timeline: timelineStore
+            ).run()
+
+            await MainActor.run {
+                manager?.lastUsageImport = Date()
+                manager?.usageImportInFlight = false
+                manager?.rebuildAccounts()
+            }
+        }
     }
 
     private func observeActiveAccounts() {
@@ -167,7 +266,8 @@ final class AccountManager: ObservableObject {
                 isActive: true,
                 windows: cached?.projectedWindows() ?? [],
                 status: cached.map { .live($0.capturedAt) }
-                    ?? .noData(reason: "use Codex once to record limits")))
+                    ?? .noData(reason: "use Codex once to record limits"),
+                usageAccountID: activeAccountID))
         }
 
         for name in profileNames {
@@ -176,7 +276,8 @@ final class AccountManager: ObservableObject {
                 result.append(Account(
                     provider: .codex, profileName: name, email: nil, plan: nil,
                     isActive: false, windows: [],
-                    status: .error("unreadable credential")))
+                    status: .error("unreadable credential"),
+                    usageAccountID: nil))
                 continue
             }
             let cached = SnapshotCache.get(accountID: id.accountID)
@@ -188,7 +289,8 @@ final class AccountManager: ObservableObject {
                 isActive: id.accountID == activeAccountID,
                 windows: cached?.projectedWindows() ?? [],
                 status: cached.map { .live($0.capturedAt) }
-                    ?? .noData(reason: "no reading yet — switch to it and use Codex once")))
+                    ?? .noData(reason: "no reading yet — switch to it and use Codex once"),
+                usageAccountID: id.accountID))
         }
         return result
     }
@@ -233,9 +335,7 @@ final class AccountManager: ObservableObject {
                 codexUsageError = nil
                 publishUsageErrors()
 
-                var result = codexAccounts()
-                result.append(contentsOf: claudeAccounts())
-                accounts = Self.applyDemoLabels(result)
+                rebuildAccounts()
             } catch {
                 lastCodexPoll = Date()
                 lastCodexPollAccountID = requestedAccountID
@@ -252,7 +352,8 @@ final class AccountManager: ObservableObject {
             return [Account(
                 provider: .claude, profileName: "not-detected",
                 email: nil, plan: nil, isActive: false, windows: [],
-                status: .noData(reason: "no Claude login found in ~/.claude.json"))]
+                status: .noData(reason: "no Claude login found in ~/.claude.json"),
+                usageAccountID: nil)]
         }
 
         var result: [Account] = []
@@ -296,7 +397,8 @@ final class AccountManager: ObservableObject {
             status: cached.map { .live($0.capturedAt) }
                 ?? .noData(reason: isActive
                     ? "sign in via “Add Claude account…” below to see limits"
-                    : "no reading yet"))
+                    : "no reading yet"),
+            usageAccountID: uuid)
     }
 
     /// Fetch live usage for EVERY Claude account we have a token for — each
@@ -337,10 +439,7 @@ final class AccountManager: ObservableObject {
                 ? nil
                 : "Claude: \(failures.joined(separator: " · "))"
             publishUsageErrors()
-            // Rebuild rows without re-triggering the poll.
-            var result = codexAccounts()
-            result.append(contentsOf: claudeAccounts())
-            accounts = Self.applyDemoLabels(result)
+            rebuildAccounts()
         }
     }
 

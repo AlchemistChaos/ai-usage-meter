@@ -106,5 +106,33 @@ rg -Fq 'let windows = AccountPresentation.detailWindows(for: account)' "$view" |
   echo "FAIL: inactive account detail should include every provider window" >&2
   exit 1
 }
+rg -Fq 'TokenSummaryRow(title: "Today"' "$view" || {
+  echo "FAIL: per-account Today token summary is missing" >&2
+  exit 1
+}
+rg -Fq 'TokenSummaryRow(title: "24h"' "$view" || {
+  echo "FAIL: per-account 24h token summary is missing" >&2
+  exit 1
+}
+rg -Fq 'TokenSummaryRow(title: "7d"' "$view" || {
+  echo "FAIL: per-account 7d token summary is missing" >&2
+  exit 1
+}
+rg -Fq 'TokenSummaryRow(title: "Month"' "$view" || {
+  echo "FAIL: per-account Month token summary is missing" >&2
+  exit 1
+}
+rg -Fq 'TokenSummaryRow(title: "Year"' "$view" || {
+  echo "FAIL: per-account Year token summary is missing" >&2
+  exit 1
+}
+rg -q 'History' "$view" || {
+  echo "FAIL: history entry point is missing" >&2
+  exit 1
+}
+rg -q 'UsageHistoryView' "$view" || {
+  echo "FAIL: usage history drill-down is not wired" >&2
+  exit 1
+}
 
 echo "PASS: dashboard header structure"

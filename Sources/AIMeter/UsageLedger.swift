@@ -28,6 +28,15 @@ enum UsageLedger {
         let totalTokens: Int
     }
 
+    struct EventRow: Equatable {
+        let timestamp: Date
+        let inputTokens: Int
+        let outputTokens: Int
+        let cacheWriteTokens: Int
+        let cacheReadTokens: Int
+        let totalTokens: Int
+    }
+
     struct ImportCheckpoint: Equatable {
         let source: String
         let cursor: String
@@ -171,6 +180,53 @@ enum UsageLedger {
             return ImportCheckpoint(
                 source: String(cString: sourceText),
                 cursor: String(cString: cursorText))
+        }
+
+        func events(
+            provider: ProviderKind,
+            accountID: String?,
+            start: Date,
+            end: Date
+        ) throws -> [EventRow] {
+            let accountClause = accountID == nil ? "account_id IS NULL" : "account_id = ?"
+            let sql = """
+                SELECT
+                    ts,
+                    input_tokens,
+                    output_tokens,
+                    cache_write_tokens,
+                    cache_read_tokens,
+                    total_tokens
+                FROM usage_events
+                WHERE provider = ?
+                  AND \(accountClause)
+                  AND ts >= ?
+                  AND ts < ?
+                ORDER BY ts ASC
+                """
+            let stmt = try prepare(sql)
+            defer { sqlite3_finalize(stmt) }
+
+            sqlite3_bind_text(stmt, 1, provider.rawValue, -1, sqliteTransient)
+            var nextIndex: Int32 = 2
+            if let accountID {
+                sqlite3_bind_text(stmt, nextIndex, accountID, -1, sqliteTransient)
+                nextIndex += 1
+            }
+            sqlite3_bind_double(stmt, nextIndex, start.timeIntervalSince1970)
+            sqlite3_bind_double(stmt, nextIndex + 1, end.timeIntervalSince1970)
+
+            var rows: [EventRow] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                rows.append(EventRow(
+                    timestamp: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 0)),
+                    inputTokens: Int(sqlite3_column_int64(stmt, 1)),
+                    outputTokens: Int(sqlite3_column_int64(stmt, 2)),
+                    cacheWriteTokens: Int(sqlite3_column_int64(stmt, 3)),
+                    cacheReadTokens: Int(sqlite3_column_int64(stmt, 4)),
+                    totalTokens: Int(sqlite3_column_int64(stmt, 5))))
+            }
+            return rows
         }
 
         private func prepare(_ sql: String) throws -> OpaquePointer? {
