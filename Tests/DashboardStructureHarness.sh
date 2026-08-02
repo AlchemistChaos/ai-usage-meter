@@ -78,6 +78,10 @@ rg -Uq 'EmailLabel\(\n\s+text: account\.label,\n\s+blurEmails: blurEmails' "$vie
   echo "FAIL: account email labels are not routed through the blur renderer" >&2
   exit 1
 }
+rg -Fq '.blur(radius: shouldBlur ? 7 : 0)' "$view" || {
+  echo "FAIL: email blur should be strong enough to hide account addresses" >&2
+  exit 1
+}
 rg -q 'help\("Quit"\)' "$view" || {
   echo "FAIL: header quit control is missing" >&2
   exit 1
