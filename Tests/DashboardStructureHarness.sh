@@ -66,6 +66,18 @@ rg -q 'help\("Refresh"\)' "$view" || {
   echo "FAIL: header refresh control is missing" >&2
   exit 1
 }
+rg -q '@State private var blurEmails = false' "$view" || {
+  echo "FAIL: header email blur state is missing" >&2
+  exit 1
+}
+rg -Fq 'BlurButton(isBlurred: blurEmails)' "$view" || {
+  echo "FAIL: header email blur button is missing" >&2
+  exit 1
+}
+rg -Uq 'EmailLabel\(\n\s+text: account\.label,\n\s+blurEmails: blurEmails' "$view" || {
+  echo "FAIL: account email labels are not routed through the blur renderer" >&2
+  exit 1
+}
 rg -q 'help\("Quit"\)' "$view" || {
   echo "FAIL: header quit control is missing" >&2
   exit 1

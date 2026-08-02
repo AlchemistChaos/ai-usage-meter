@@ -13,6 +13,7 @@ struct GlassDashboardView: View {
     @ObservedObject var manager: AccountManager
     @State private var contentHeight: CGFloat = 360
     @State private var selectedHistoryAccount: Account?
+    @State private var blurEmails = false
     @AppStorage(MenuBarPreferenceKey.claudeFiveHour)
     private var showsClaudeFiveHour = MenuBarSelection.standard.showsClaudeFiveHour
     @AppStorage(MenuBarPreferenceKey.claudeWeekly)
@@ -32,6 +33,7 @@ struct GlassDashboardView: View {
                     ProviderGlassSection(
                         group: group,
                         manager: manager,
+                        blurEmails: blurEmails,
                         columns: columns,
                         onHistory: { selectedHistoryAccount = $0 })
                 }
@@ -93,6 +95,9 @@ struct GlassDashboardView: View {
                 Text("Updated \(date.formatted(date: .omitted, time: .shortened))")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
+            }
+            BlurButton(isBlurred: blurEmails) {
+                blurEmails.toggle()
             }
             Button { manager.refresh() } label: {
                 Image(systemName: "arrow.clockwise")
@@ -175,6 +180,7 @@ struct GlassDashboardView: View {
 private struct ProviderGlassSection: View {
     let group: ProviderAccountGroup
     @ObservedObject var manager: AccountManager
+    let blurEmails: Bool
     let columns: [GridItem]
     let onHistory: (Account) -> Void
 
@@ -184,7 +190,7 @@ private struct ProviderGlassSection: View {
                 .padding(.horizontal, 2)
 
             if let active = group.active {
-                ActiveAccountCard(account: active) {
+                ActiveAccountCard(account: active, blurEmails: blurEmails) {
                     onHistory(active)
                 }
             }
@@ -201,7 +207,7 @@ private struct ProviderGlassSection: View {
 
                 LazyVGrid(columns: columns, spacing: 6) {
                     ForEach(group.inactive) { account in
-                        CompactAccountCard(account: account) {
+                        CompactAccountCard(account: account, blurEmails: blurEmails) {
                             if account.provider == .codex {
                                 manager.switchTo(account)
                             }
@@ -238,6 +244,52 @@ private struct ProviderGlassSection: View {
     }
 }
 
+private struct BlurButton: View {
+    let isBlurred: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: isBlurred ? "eye.slash" : "eye")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(isBlurred ? "Blurred" : "Blur")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(.white.opacity(isBlurred ? 0.13 : 0.08))
+            .overlay {
+                Capsule()
+                    .stroke(.white.opacity(0.14), lineWidth: 1)
+            }
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isBlurred ? "Show emails" : "Blur emails")
+        .help(isBlurred ? "Show emails" : "Blur emails")
+    }
+}
+
+private struct EmailLabel: View {
+    let text: String
+    let blurEmails: Bool
+    let font: Font
+
+    var body: some View {
+        let shouldBlur = blurEmails && text.contains("@")
+
+        Text(text)
+            .font(font)
+            .lineLimit(1)
+            .blur(radius: shouldBlur ? 3 : 0)
+            .opacity(shouldBlur ? 0.78 : 1)
+            .animation(.easeInOut(duration: 0.14), value: shouldBlur)
+            .help(shouldBlur ? "Email hidden" : text)
+            .accessibilityLabel(shouldBlur ? "Email hidden" : text)
+    }
+}
+
 private struct ProviderHeader: View {
     let provider: ProviderKind
 
@@ -258,6 +310,7 @@ private struct ProviderHeader: View {
 
 private struct ActiveAccountCard: View {
     let account: Account
+    let blurEmails: Bool
     let onHistory: () -> Void
 
     var body: some View {
@@ -269,10 +322,10 @@ private struct ActiveAccountCard: View {
                     .shadow(color: Color.green.opacity(0.75), radius: 4)
                     .accessibilityLabel("Active CLI account")
                     .help("Active CLI account")
-                Text(account.label)
-                    .font(.system(size: 11, weight: .semibold))
-                    .lineLimit(1)
-                    .help(account.label)
+                EmailLabel(
+                    text: account.label,
+                    blurEmails: blurEmails,
+                    font: .system(size: 11, weight: .semibold))
                 PlanBadge(plan: account.plan)
                 Spacer()
                 Button("History") { onHistory() }
@@ -370,6 +423,7 @@ private struct ActiveWindowRow: View {
 
 private struct CompactAccountCard: View {
     let account: Account
+    let blurEmails: Bool
     let onSwitch: () -> Void
     @State private var hovering = false
     @State private var showingResetDetails = false
@@ -382,10 +436,10 @@ private struct CompactAccountCard: View {
 
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 4) {
-                Text(account.label)
-                    .font(.system(size: 9, weight: .semibold))
-                    .lineLimit(1)
-                    .help(account.label)
+                EmailLabel(
+                    text: account.label,
+                    blurEmails: blurEmails,
+                    font: .system(size: 9, weight: .semibold))
                 Spacer(minLength: 2)
                 PlanBadge(plan: account.plan, compact: true)
                 if account.provider == .codex {
@@ -447,7 +501,7 @@ private struct CompactAccountCard: View {
         .onHover { hovering = $0 }
         .onTapGesture { showingResetDetails.toggle() }
         .popover(isPresented: $showingResetDetails, arrowEdge: .bottom) {
-            ResetDetailsPopover(account: account)
+            ResetDetailsPopover(account: account, blurEmails: blurEmails)
         }
         .contextMenu {
             if account.provider == .codex {
@@ -465,14 +519,16 @@ private struct CompactAccountCard: View {
 
 private struct ResetDetailsPopover: View {
     let account: Account
+    let blurEmails: Bool
 
     var body: some View {
         let windows = AccountPresentation.detailWindows(for: account)
 
         VStack(alignment: .leading, spacing: 9) {
-            Text(account.label)
-                .font(.system(size: 12, weight: .semibold))
-                .lineLimit(1)
+            EmailLabel(
+                text: account.label,
+                blurEmails: blurEmails,
+                font: .system(size: 12, weight: .semibold))
 
             if windows.isEmpty {
                 Text("Reset times are available after using this account")
