@@ -13,6 +13,8 @@ final class AccountManager: ObservableObject {
     /// Codex usage is a live app-server request — poll at most every 5 minutes.
     private var lastCodexPoll: Date?
     private var lastCodexPollAccountID: String?
+    private var lastCodexLiveSnapshotAccountID: String?
+    private var lastCodexLiveSnapshotCapturedAt: Date?
     private var codexPollInFlightAccountID: String?
     private var codexUsageError: String?
     /// Claude usage is a real network call — poll at most every 5 minutes.
@@ -210,10 +212,16 @@ final class AccountManager: ObservableObject {
 
         let liveCredential = ProfileStore.activeCredentialPath(.codex)
         let cliAccountID = CodexProvider.identity(at: liveCredential)?.accountID
-        let desktopAccountID = CodexProvider.desktopAccountIdentity()
+        let credentialModifiedAt = CodexProvider.modificationDate(at: liveCredential)
+        let desktopState = CodexProvider.desktopAccountState()
+        let desktopIsRunning = !NSRunningApplication.runningApplications(
+            withBundleIdentifier: CodexProvider.desktopBundleIdentifier).isEmpty
         if let codexAccountID = CodexProvider.activeAccountIdentity(
-            desktopAccountID: desktopAccountID,
-            cliAccountID: cliAccountID) {
+            desktopAccountID: desktopState?.accountID,
+            desktopModifiedAt: desktopState?.modifiedAt,
+            desktopIsRunning: desktopIsRunning,
+            cliAccountID: cliAccountID,
+            cliCredentialModifiedAt: credentialModifiedAt) {
             try? timelineStore?.observe(
                 provider: .codex,
                 accountID: codexAccountID,
@@ -232,8 +240,7 @@ final class AccountManager: ObservableObject {
         // SQLite rows have no account ID. Only use one when it was recorded
         // after this credential file became active, or an account switch could
         // make the menu-bar C value show the previous account's reading.
-        let credentialModifiedAt = (try? FileManager.default.attributesOfItem(
-            atPath: liveCredential.path())[.modificationDate]) as? Date
+        let credentialModifiedAt = CodexProvider.modificationDate(at: liveCredential)
         if let snapshot = CodexProvider.latestSnapshot(),
            let live = liveIdentity,
            let credentialModifiedAt,
@@ -245,22 +252,33 @@ final class AccountManager: ObservableObject {
 
         let desktopIsRunning = !NSRunningApplication.runningApplications(
             withBundleIdentifier: CodexProvider.desktopBundleIdentifier).isEmpty
-        let desktopAccountID = desktopIsRunning
-            ? CodexProvider.desktopAccountIdentity()
-            : nil
+        let desktopState = CodexProvider.desktopAccountState()
         let activeAccountID = CodexProvider.activeAccountIdentity(
-            desktopAccountID: desktopAccountID,
-            cliAccountID: liveIdentity?.accountID)
+            desktopAccountID: desktopState?.accountID,
+            desktopModifiedAt: desktopState?.modifiedAt,
+            desktopIsRunning: desktopIsRunning,
+            cliAccountID: liveIdentity?.accountID,
+            cliCredentialModifiedAt: credentialModifiedAt)
         let profileNames = ProfileStore.listProfiles(.codex)
         let activeProfileName = profileNames.first { name in
             CodexProvider.accountIdentity(
                 at: ProfileStore.profileFile(.codex, name)) == activeAccountID
+        }
+        if let activeProfileName,
+           liveIdentity?.accountID == activeAccountID {
+            _ = try? ProfileStore.importActive(.codex, as: activeProfileName)
         }
 
         // Someone may be logged in without having imported that account yet.
         if activeProfileName == nil, let activeAccountID {
             let cached = SnapshotCache.get(accountID: activeAccountID)
             let activeIsCLI = liveIdentity?.accountID == activeAccountID
+            let status: DataStatus = cached.map {
+                codexDataStatus(
+                    cachedAt: $0.capturedAt,
+                    accountID: activeAccountID,
+                    activeAccountID: activeAccountID)
+            } ?? .noData(reason: "use Codex once to record limits")
             result.append(Account(
                 provider: .codex,
                 profileName: activeIsCLI
@@ -270,8 +288,7 @@ final class AccountManager: ObservableObject {
                 plan: cached?.plan ?? (activeIsCLI ? liveIdentity?.plan : nil),
                 isActive: true,
                 windows: cached?.projectedWindows() ?? [],
-                status: cached.map { .live($0.capturedAt) }
-                    ?? .noData(reason: "use Codex once to record limits"),
+                status: status,
                 usageAccountID: activeAccountID))
         }
 
@@ -286,6 +303,12 @@ final class AccountManager: ObservableObject {
                 continue
             }
             let cached = SnapshotCache.get(accountID: id.accountID)
+            let status: DataStatus = cached.map {
+                codexDataStatus(
+                    cachedAt: $0.capturedAt,
+                    accountID: id.accountID,
+                    activeAccountID: activeAccountID)
+            } ?? .noData(reason: "no reading yet — switch to it and use Codex once")
             result.append(Account(
                 provider: .codex,
                 profileName: name,
@@ -293,11 +316,23 @@ final class AccountManager: ObservableObject {
                 plan: cached?.plan ?? id.plan,
                 isActive: id.accountID == activeAccountID,
                 windows: cached?.projectedWindows() ?? [],
-                status: cached.map { .live($0.capturedAt) }
-                    ?? .noData(reason: "no reading yet — switch to it and use Codex once"),
+                status: status,
                 usageAccountID: id.accountID))
         }
         return result
+    }
+
+    private func codexDataStatus(
+        cachedAt: Date,
+        accountID: String,
+        activeAccountID: String?
+    ) -> DataStatus {
+        if accountID == activeAccountID,
+           lastCodexLiveSnapshotAccountID == accountID,
+           lastCodexLiveSnapshotCapturedAt == cachedAt {
+            return .live(cachedAt)
+        }
+        return .cached(cachedAt)
     }
 
     /// Fetch the active Codex account directly through the installed official
@@ -337,6 +372,10 @@ final class AccountManager: ObservableObject {
                 SnapshotCache.put(
                     accountID: requestedAccountID,
                     snapshot: snapshot)
+                if let cached = SnapshotCache.get(accountID: requestedAccountID) {
+                    lastCodexLiveSnapshotAccountID = requestedAccountID
+                    lastCodexLiveSnapshotCapturedAt = cached.capturedAt
+                }
                 codexUsageError = nil
                 publishUsageErrors()
 

@@ -106,6 +106,18 @@ rg -Fq 'let windows = AccountPresentation.detailWindows(for: account)' "$view" |
   echo "FAIL: inactive account detail should include every provider window" >&2
   exit 1
 }
+rg -Fq '.contextMenu' "$view" || {
+  echo "FAIL: compact account cards need a context menu" >&2
+  exit 1
+}
+rg -q 'Make Default' "$view" || {
+  echo "FAIL: compact Codex accounts should offer a right-click Make Default action" >&2
+  exit 1
+}
+rg -Uq 'if account\.provider == \.codex \{\n\s+Button\("Make Default"\)' "$view" || {
+  echo "FAIL: Make Default should only be offered for Codex account switching" >&2
+  exit 1
+}
 rg -Fq 'TokenSummaryRow(title: "Today"' "$view" || {
   echo "FAIL: per-account Today token summary is missing" >&2
   exit 1

@@ -97,13 +97,52 @@ enum CodexRateLimitClientHarness {
         expect(
             CodexProvider.activeAccountIdentity(
                 desktopAccountID: "desktop-account",
-                cliAccountID: "cli-account") == "desktop-account",
-            "the running Codex desktop account should take precedence over CLI auth")
+                cliAccountID: "cli-account") == "cli-account",
+            "CLI auth should take precedence over Codex desktop auth")
         expect(
             CodexProvider.activeAccountIdentity(
                 desktopAccountID: nil,
                 cliAccountID: "cli-account") == "cli-account",
             "CLI auth should remain the fallback when Codex desktop is unavailable")
+        expect(
+            CodexProvider.activeAccountIdentity(
+                desktopAccountID: "desktop-account",
+                desktopModifiedAt: capturedAt.addingTimeInterval(10),
+                desktopIsRunning: false,
+                cliAccountID: "cli-account",
+                cliCredentialModifiedAt: capturedAt) == "cli-account",
+            "CLI auth should define the active local Codex account")
+        expect(
+            CodexProvider.activeAccountIdentity(
+                desktopAccountID: "desktop-account",
+                desktopModifiedAt: capturedAt.addingTimeInterval(-10),
+                desktopIsRunning: false,
+                cliAccountID: "cli-account",
+                cliCredentialModifiedAt: capturedAt) == "cli-account",
+            "older Codex desktop scope should not override newer CLI auth")
+        expect(
+            CodexProvider.activeAccountIdentity(
+                desktopAccountID: "desktop-account",
+                desktopModifiedAt: capturedAt.addingTimeInterval(-10),
+                desktopIsRunning: true,
+                cliAccountID: "cli-account",
+                cliCredentialModifiedAt: capturedAt) == "cli-account",
+            "a fresh AI Meter CLI switch should beat an older desktop scope")
+        expect(
+            CodexProvider.activeAccountIdentity(
+                desktopAccountID: "desktop-account",
+                desktopModifiedAt: capturedAt.addingTimeInterval(10),
+                desktopIsRunning: true,
+                cliAccountID: "cli-account",
+                cliCredentialModifiedAt: capturedAt) == "cli-account",
+            "Codex desktop should not override a readable CLI credential")
+
+        expect(
+            DataStatus.cached(capturedAt).isUsable,
+            "cached Codex limits should still be usable for headroom")
+        expect(
+            DataStatus.cached(Date()).description.hasPrefix("cached "),
+            "cached Codex limits should be visibly labelled as cached")
 
         let stream = """
         {"id":1,"result":{"userAgent":"test"}}

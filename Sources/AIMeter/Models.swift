@@ -48,20 +48,33 @@ enum ProviderKind: String, Codable, CaseIterable {
 enum DataStatus: Equatable {
     /// Real limit data harvested at the given time.
     case live(Date)
+    /// Last known limit data for an account we are not polling live right now.
+    case cached(Date)
     /// We know the account exists but have no usage figures.
     case noData(reason: String)
     /// Something is misconfigured.
     case error(String)
 
-    var isUsable: Bool { if case .live = self { return true }; return false }
+    var isUsable: Bool {
+        switch self {
+        case .live, .cached: return true
+        case .noData, .error: return false
+        }
+    }
 
     var description: String {
-        switch self {
-        case .live(let at):
+        func age(_ at: Date) -> String {
             let mins = Int(-at.timeIntervalSinceNow / 60)
             if mins < 1 { return "just now" }
             if mins < 60 { return "\(mins)m ago" }
             return "\(mins / 60)h ago"
+        }
+
+        switch self {
+        case .live(let at):
+            return age(at)
+        case .cached(let at):
+            return "cached \(age(at))"
         case .noData(let reason): return reason
         case .error(let msg): return msg
         }

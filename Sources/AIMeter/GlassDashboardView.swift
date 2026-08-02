@@ -449,6 +449,13 @@ private struct CompactAccountCard: View {
         .popover(isPresented: $showingResetDetails, arrowEdge: .bottom) {
             ResetDetailsPopover(account: account)
         }
+        .contextMenu {
+            if account.provider == .codex {
+                Button("Make Default") {
+                    onSwitch()
+                }
+            }
+        }
         .accessibilityAction(named: "Show reset times") {
             showingResetDetails = true
         }

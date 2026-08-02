@@ -19,6 +19,11 @@ enum CodexProvider {
         let plan: String?
     }
 
+    struct DesktopAccountState {
+        let accountID: String
+        let modifiedAt: Date
+    }
+
     /// Decode the id_token JWT to recover who this credential belongs to.
     static func identity(at url: URL) -> Identity? {
         guard let data = try? Data(contentsOf: url),
@@ -54,10 +59,26 @@ enum CodexProvider {
     /// app-server without replacing ~/.codex/auth.json. Its live Sentry scope
     /// records the account ID that process is actually using.
     static func desktopAccountIdentity() -> String? {
+        desktopAccountState()?.accountID
+    }
+
+    static func desktopAccountState() -> DesktopAccountState? {
         let scope = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "Library/Application Support/Codex/sentry/scope_v3.json")
         guard let data = try? Data(contentsOf: scope) else { return nil }
-        return desktopAccountIdentity(from: data)
+        guard let accountID = desktopAccountIdentity(from: data) else { return nil }
+        let modifiedAt = modificationDate(at: scope) ?? .distantPast
+        return .init(accountID: accountID, modifiedAt: modifiedAt)
+    }
+
+    static func modificationDate(at url: URL) -> Date? {
+        if let values = try? url.resourceValues(
+            forKeys: [.contentModificationDateKey]),
+           let modifiedAt = values.contentModificationDate {
+            return modifiedAt
+        }
+        return (try? FileManager.default.attributesOfItem(
+            atPath: url.path())[.modificationDate]) as? Date
     }
 
     static func desktopAccountIdentity(from data: Data) -> String? {
@@ -73,7 +94,23 @@ enum CodexProvider {
         desktopAccountID: String?,
         cliAccountID: String?
     ) -> String? {
-        desktopAccountID ?? cliAccountID
+        cliAccountID ?? desktopAccountID
+    }
+
+    static func activeAccountIdentity(
+        desktopAccountID: String?,
+        desktopModifiedAt: Date?,
+        desktopIsRunning: Bool,
+        cliAccountID: String?,
+        cliCredentialModifiedAt: Date?
+    ) -> String? {
+        // The menu bar's Codex usage is sourced from ~/.codex logs and the
+        // Codex app-server launched with CLI credentials. Codex desktop can be
+        // logged into a different ChatGPT account at the same time and updates
+        // its Sentry scope continuously, so it must not override a readable CLI
+        // credential. Keep desktop scope as a fallback for discovery only.
+        if let cliAccountID { return cliAccountID }
+        return desktopAccountID
     }
 
     /// SQLite rate-limit rows do not carry an account ID. A row can only be

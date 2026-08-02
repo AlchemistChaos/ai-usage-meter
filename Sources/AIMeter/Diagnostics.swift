@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Prints exactly what the app can and cannot read, so credential and usage
 /// detection can be verified from the terminal.
@@ -16,13 +17,24 @@ enum Diagnostics {
         print("=== AI Meter diagnostics ===\n")
 
         print("[Codex] active credential: \(ProfileStore.activeCredentialPath(.codex).path())")
-        if let id = CodexProvider.identity(at: ProfileStore.activeCredentialPath(.codex)) {
+        let liveCredential = ProfileStore.activeCredentialPath(.codex)
+        let cliIdentity = CodexProvider.identity(at: liveCredential)
+        let cliCredentialModifiedAt = CodexProvider.modificationDate(at: liveCredential)
+        if let id = cliIdentity {
             print("  email:      \(id.email ?? "—")")
             print("  plan:       \(id.plan ?? "—")")
             print("  account_id: \(id.accountID)")
         } else {
             print("  no readable Codex credential")
         }
+        let desktopState = CodexProvider.desktopAccountState()
+        let desktopIsRunning = !NSRunningApplication.runningApplications(
+            withBundleIdentifier: CodexProvider.desktopBundleIdentifier).isEmpty
+        print("  desktop scope account_id: \(desktopState?.accountID ?? "none")")
+        if let modifiedAt = desktopState?.modifiedAt {
+            print("  desktop scope modified:   \(modifiedAt)")
+        }
+        print("  Codex desktop running:    \(desktopIsRunning)")
 
         print("\n[Codex] live app-server usage:")
         do {
@@ -40,7 +52,20 @@ enum Diagnostics {
         }
 
         print("\n[Codex] saved profiles: \(ProfileStore.listProfiles(.codex))")
-        print("  active profile: \(ProfileStore.activeProfileName(.codex) ?? "none imported")")
+        let resolvedAccountID = CodexProvider.activeAccountIdentity(
+            desktopAccountID: desktopState?.accountID,
+            desktopModifiedAt: desktopState?.modifiedAt,
+            desktopIsRunning: desktopIsRunning,
+            cliAccountID: cliIdentity?.accountID,
+            cliCredentialModifiedAt: cliCredentialModifiedAt)
+        let resolvedProfile = resolvedAccountID.flatMap { accountID in
+            ProfileStore.listProfiles(.codex).first { name in
+                CodexProvider.accountIdentity(
+                    at: ProfileStore.profileFile(.codex, name)) == accountID
+            }
+        }
+        print("  resolved active account_id: \(resolvedAccountID ?? "none")")
+        print("  resolved active profile: \(resolvedProfile ?? "none imported")")
 
         let probe = ClaudeProvider.probe()
         print("\n[Claude] oauth credential found: \(probe.foundOAuth)")
