@@ -250,13 +250,9 @@ private struct BlurButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: isBlurred ? "eye.slash" : "eye")
-                    .font(.system(size: 9, weight: .semibold))
-                Text(isBlurred ? "Blurred" : "Blur")
-                    .font(.system(size: 9, weight: .semibold))
-            }
-            .padding(.horizontal, 7)
+            Image(systemName: isBlurred ? "eye.slash" : "eye")
+                .font(.system(size: 9, weight: .semibold))
+                .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(.white.opacity(isBlurred ? 0.13 : 0.08))
             .overlay {

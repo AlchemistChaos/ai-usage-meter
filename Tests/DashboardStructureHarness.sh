@@ -74,6 +74,10 @@ rg -Fq 'BlurButton(isBlurred: blurEmails)' "$view" || {
   echo "FAIL: header email blur button is missing" >&2
   exit 1
 }
+if rg -Fq 'Text(isBlurred ? "Blurred" : "Blur")' "$view"; then
+  echo "FAIL: header email blur control should be icon-only" >&2
+  exit 1
+fi
 rg -Uq 'EmailLabel\(\n\s+text: account\.label,\n\s+blurEmails: blurEmails' "$view" || {
   echo "FAIL: account email labels are not routed through the blur renderer" >&2
   exit 1
