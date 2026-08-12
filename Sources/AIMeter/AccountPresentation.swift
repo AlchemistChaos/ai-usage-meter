@@ -63,19 +63,35 @@ enum AccountPresentation {
         if let claude = accounts.first(where: {
             $0.provider == .claude && $0.isActive
         }) {
-            let showsBoth = selection.showsClaudeFiveHour
-                && selection.showsClaudeWeekly
+            var hasClaudeMetric = false
+            let selectedClaudeMetricCount = [
+                selection.showsClaudeFiveHour,
+                selection.showsClaudeWeekly,
+                selection.showsClaudeFable,
+            ].filter { $0 }.count
             if selection.showsClaudeFiveHour {
                 let value = remaining(in: claude, windowMinutes: 300)
                     .map(String.init) ?? "—"
-                parts.append(showsBoth ? "A 5h \(value)" : "A \(value)")
+                parts.append(
+                    selectedClaudeMetricCount > 1
+                        ? "A 5h \(value)"
+                        : "A \(value)")
+                hasClaudeMetric = true
             }
             if selection.showsClaudeWeekly {
                 let value = remaining(in: claude, windowMinutes: 10_080)
                     .map(String.init) ?? "—"
-                parts.append(selection.showsClaudeFiveHour
+                parts.append(hasClaudeMetric
                     ? "W \(value)"
                     : "A W \(value)")
+                hasClaudeMetric = true
+            }
+            if selection.showsClaudeFable {
+                let value = fableRemaining(in: claude)
+                    .map(String.init) ?? "—"
+                parts.append(hasClaudeMetric
+                    ? "F \(value)"
+                    : "A F \(value)")
             }
         }
         if selection.showsCodexWeekly,
@@ -96,6 +112,14 @@ enum AccountPresentation {
     ) -> Int? {
         account.windows.first(where: {
             $0.windowMinutes == windowMinutes
+        }).map {
+            Int($0.remainingPercent.rounded())
+        }
+    }
+
+    private static func fableRemaining(in account: Account) -> Int? {
+        account.windows.first(where: {
+            $0.label.localizedCaseInsensitiveContains("fable")
         }).map {
             Int($0.remainingPercent.rounded())
         }

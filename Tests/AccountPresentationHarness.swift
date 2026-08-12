@@ -73,6 +73,9 @@ enum AccountPresentationHarness {
         let claudeWithFable = account(
             .claude, "claude-fable", active: false,
             windows: [fiveHour, weekly, fable])
+        let activeClaudeWithFable = account(
+            .claude, "claude-fable-active", active: true,
+            windows: [fiveHour, weekly, fable])
         expect(
             AccountPresentation.detailWindows(for: claudeWithFable).map(\.label)
                 == ["Weekly", "5h", "Fable wk"],
@@ -133,16 +136,18 @@ enum AccountPresentationHarness {
         let allMetrics = MenuBarSelection(
             showsClaudeFiveHour: true,
             showsClaudeWeekly: true,
+            showsClaudeFable: true,
             showsCodexWeekly: true)
         expect(
             AccountPresentation.menuLabel(
-                for: [claude, codex], selection: allMetrics)
-                == "A 5h 75 · W 51 · C 45",
+                for: [activeClaudeWithFable, codex], selection: allMetrics)
+                == "A 5h 75 · W 51 · F 36 · C 45",
             "all selected limits should be explicit")
 
         let weeklyOnly = MenuBarSelection(
             showsClaudeFiveHour: false,
             showsClaudeWeekly: true,
+            showsClaudeFable: false,
             showsCodexWeekly: false)
         expect(
             AccountPresentation.menuLabel(
@@ -153,6 +158,7 @@ enum AccountPresentationHarness {
         let noMetrics = MenuBarSelection(
             showsClaudeFiveHour: false,
             showsClaudeWeekly: false,
+            showsClaudeFable: false,
             showsCodexWeekly: false)
         expect(
             AccountPresentation.menuLabel(

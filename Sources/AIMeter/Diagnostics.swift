@@ -75,14 +75,6 @@ enum Diagnostics {
         }
         print("  profiles: \(ClaudeProvider.listProfiles())")
 
-        let w = TokenStats.collectWindows()
-        print("\n[Tokens today] in: \(TokenStats.formatCount(w.today.inputTokens))"
-              + "  out: \(TokenStats.formatCount(w.today.outputTokens))"
-              + "  cacheRead: \(TokenStats.formatCount(w.today.cacheReadTokens))"
-              + "  ≈\(TokenStats.formatDollars(w.today.apiEquivalentDollars)) API-equivalent")
-        print("[Tokens 7d]    in: \(TokenStats.formatCount(w.week.inputTokens))"
-              + "  out: \(TokenStats.formatCount(w.week.outputTokens))"
-              + "  ≈\(TokenStats.formatDollars(w.week.apiEquivalentDollars)) API-equivalent")
     }
 
     private static func printSnapshot(_ snap: CodexProvider.Snapshot) {

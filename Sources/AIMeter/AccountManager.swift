@@ -10,59 +10,30 @@ final class AccountManager: ObservableObject {
     @Published var lastError: String?
 
     private var timer: Timer?
-    /// Codex usage is a live app-server request — poll at most every 5 minutes.
+    /// Codex usage is a live app-server request — poll at most once a minute.
     private var lastCodexPoll: Date?
     private var lastCodexPollAccountID: String?
     private var lastCodexLiveSnapshotAccountID: String?
     private var lastCodexLiveSnapshotCapturedAt: Date?
     private var codexPollInFlightAccountID: String?
     private var codexUsageError: String?
-    /// Claude usage is a real network call — poll at most every 5 minutes.
+    /// Claude usage is a real network call — poll at most once a minute.
     private var lastClaudePoll: Date?
     private var claudePollInFlight = false
     private var claudeUsageError: String?
-    private let timelineStore = try? AccountTimelineStore.open(
-        at: ProfileStore.root.appending(path: "account-timeline.sqlite"))
-    private let usageLedger = try? UsageLedger.open(
-        at: ProfileStore.root.appending(path: "usage.sqlite"))
-    private var lastUsageImport: Date?
-    private var usageImportInFlight = false
-
-    /// Tokens burned (Claude, machine-wide from local transcripts).
-    @Published private(set) var todayTokens = TokenStats()
-    @Published private(set) var weekTokens = TokenStats()
-    private var lastTokenScan: Date?
-    private var tokenScanInFlight = false
-
     init() {
         try? ProfileStore.ensureDirs()
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
         }
     }
 
     func refresh() {
         rebuildAccounts()
-        observeActiveAccounts()
         lastRefresh = Date()
         pollCodexUsageIfStale()
         pollClaudeUsageIfStale()
-        importUsageIfStale()
-        scanTokensIfStale()
-    }
-
-    /// Recount today's tokens from transcripts, at most every 2 minutes,
-    /// off the main thread (files can be tens of MB).
-    private func scanTokensIfStale() {
-        guard !tokenScanInFlight,
-              lastTokenScan.map({ -$0.timeIntervalSinceNow > 120 }) ?? true
-        else { return }
-        tokenScanInFlight = true
-        Task.detached(priority: .utility) { [weak self] in
-            let windows = TokenStats.collectWindows()
-            await self?.applyTokenStats(windows.today, week: windows.week)
-        }
     }
 
     /// Swap real emails for distinct placeholders when demo mode is on.
@@ -73,160 +44,10 @@ final class AccountManager: ObservableObject {
         }
     }
 
-    /// Rough weekly subscription spend across all visible accounts, from list
-    /// prices by plan tier. Used to frame API-equivalent value as a multiple.
-    var weeklyPlanSpend: Double {
-        let monthly = accounts.reduce(0.0) { sum, a in
-            guard a.headroom != nil || a.isActive else { return sum }
-            let plan = (a.plan ?? "").lowercased()
-            switch a.provider {
-            case .claude:
-                if plan.contains("20x") { return sum + 200 }
-                if plan.contains("max") { return sum + 100 }
-                if plan.contains("pro") { return sum + 20 }
-                return sum
-            case .codex:
-                if plan.contains("pro") { return sum + 200 }
-                if plan.contains("plus") { return sum + 20 }
-                return sum
-            }
-        }
-        return monthly * 12 / 52
-    }
-
-    private func applyTokenStats(_ stats: TokenStats, week: TokenStats) {
-        todayTokens = stats
-        weekTokens = week
-        lastTokenScan = Date()
-        tokenScanInFlight = false
-    }
-
     private func rebuildAccounts() {
         var result = codexAccounts()
         result.append(contentsOf: claudeAccounts())
-        accounts = Self.applyDemoLabels(enrichAccounts(result))
-    }
-
-    private func enrichAccounts(_ accounts: [Account]) -> [Account] {
-        accounts.map { account in
-            let snapshot = usageSnapshot(for: account)
-            return Account(
-                provider: account.provider,
-                profileName: account.profileName,
-                email: account.email,
-                plan: account.plan,
-                isActive: account.isActive,
-                windows: account.windows,
-                status: account.status,
-                usageAccountID: account.usageAccountID,
-                todayTokens: snapshot.today,
-                last24HoursTokens: snapshot.last24Hours,
-                last7DaysTokens: snapshot.last7Days,
-                thisMonthTokens: snapshot.thisMonth,
-                thisYearTokens: snapshot.thisYear)
-        }
-    }
-
-    private func usageSnapshot(for account: Account) -> UsageHistoryQuery.HistorySnapshot {
-        guard let usageLedger else { return emptyUsageSnapshot() }
-        let query = UsageHistoryQuery(ledger: usageLedger)
-        return (try? query.snapshot(
-            provider: account.provider,
-            accountID: account.usageAccountID,
-            now: Date())) ?? emptyUsageSnapshot()
-    }
-
-    private func emptyUsageSnapshot() -> UsageHistoryQuery.HistorySnapshot {
-        .init(
-            today: AttributedTokenStats(),
-            last24Hours: AttributedTokenStats(),
-            last7Days: AttributedTokenStats(),
-            last30Days: AttributedTokenStats(),
-            thisMonth: AttributedTokenStats(),
-            thisYear: AttributedTokenStats())
-    }
-
-    func historySeries(
-        for account: Account,
-        preset: UsageHistoryQuery.RangePreset
-    ) -> UsageHistoryQuery.Series {
-        guard let usageLedger else {
-            return .init(preset: preset, points: [])
-        }
-        let query = UsageHistoryQuery(ledger: usageLedger)
-        return (try? query.series(
-            provider: account.provider,
-            accountID: account.usageAccountID,
-            preset: preset,
-            now: Date())) ?? .init(preset: preset, points: [])
-    }
-
-    private func importUsageIfStale() {
-        guard !usageImportInFlight,
-              lastUsageImport.map({ -$0.timeIntervalSinceNow > 60 }) ?? true,
-              let usageLedger,
-              let timelineStore
-        else { return }
-
-        usageImportInFlight = true
-        let projectsRoot = FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: ".claude/projects")
-        let logsDB = CodexProvider.logsDB
-        let manager = self
-
-        Task.detached(priority: .utility) {
-            let storedProfiles = ClaudeProvider.listProfiles().map {
-                ClaudeProvider.storedProfile($0)
-            }
-            try? ClaudeTranscriptImporter(
-                projectsRoot: projectsRoot,
-                ledger: usageLedger,
-                timeline: timelineStore,
-                knownProfileCount: { storedProfiles.count },
-                singleKnownAccountID: {
-                    ClaudeProvider.soleStoredAccountUUID(from: storedProfiles)
-                }
-            ).run()
-
-            try? CodexUsageImporter(
-                logsDB: logsDB,
-                ledger: usageLedger,
-                timeline: timelineStore
-            ).run()
-
-            await MainActor.run {
-                manager.lastUsageImport = Date()
-                manager.usageImportInFlight = false
-                manager.rebuildAccounts()
-            }
-        }
-    }
-
-    private func observeActiveAccounts() {
-        if let claudeAccountID = ClaudeProvider.identity()?.accountUuid {
-            try? timelineStore?.observe(
-                provider: .claude,
-                accountID: claudeAccountID,
-                at: Date())
-        }
-
-        let liveCredential = ProfileStore.activeCredentialPath(.codex)
-        let cliAccountID = CodexProvider.identity(at: liveCredential)?.accountID
-        let credentialModifiedAt = CodexProvider.modificationDate(at: liveCredential)
-        let desktopState = CodexProvider.desktopAccountState()
-        let desktopIsRunning = !NSRunningApplication.runningApplications(
-            withBundleIdentifier: CodexProvider.desktopBundleIdentifier).isEmpty
-        if let codexAccountID = CodexProvider.activeAccountIdentity(
-            desktopAccountID: desktopState?.accountID,
-            desktopModifiedAt: desktopState?.modifiedAt,
-            desktopIsRunning: desktopIsRunning,
-            cliAccountID: cliAccountID,
-            cliCredentialModifiedAt: credentialModifiedAt) {
-            try? timelineStore?.observe(
-                provider: .codex,
-                accountID: codexAccountID,
-                at: Date())
-        }
+        accounts = Self.applyDemoLabels(result)
     }
 
     // MARK: - Codex (local: JWT + sqlite log harvest)
@@ -288,8 +109,7 @@ final class AccountManager: ObservableObject {
                 plan: cached?.plan ?? (activeIsCLI ? liveIdentity?.plan : nil),
                 isActive: true,
                 windows: cached?.projectedWindows() ?? [],
-                status: status,
-                usageAccountID: activeAccountID))
+                status: status))
         }
 
         for name in profileNames {
@@ -298,8 +118,7 @@ final class AccountManager: ObservableObject {
                 result.append(Account(
                     provider: .codex, profileName: name, email: nil, plan: nil,
                     isActive: false, windows: [],
-                    status: .error("unreadable credential"),
-                    usageAccountID: nil))
+                    status: .error("unreadable credential")))
                 continue
             }
             let cached = SnapshotCache.get(accountID: id.accountID)
@@ -316,8 +135,7 @@ final class AccountManager: ObservableObject {
                 plan: cached?.plan ?? id.plan,
                 isActive: id.accountID == activeAccountID,
                 windows: cached?.projectedWindows() ?? [],
-                status: status,
-                usageAccountID: id.accountID))
+                status: status))
         }
         return result
     }
@@ -336,14 +154,14 @@ final class AccountManager: ObservableObject {
     }
 
     /// Fetch the active Codex account directly through the installed official
-    /// client. A changed account bypasses the normal five-minute throttle.
+    /// client. A changed account bypasses the normal one-minute throttle.
     private func pollCodexUsageIfStale() {
         guard let identity = CodexProvider.identity(
             at: ProfileStore.activeCredentialPath(.codex))
         else { return }
         let requestedAccountID = identity.accountID
         let isFreshForAccount = lastCodexPollAccountID == requestedAccountID
-            && (lastCodexPoll.map { -$0.timeIntervalSinceNow <= 300 } ?? false)
+            && (lastCodexPoll.map { -$0.timeIntervalSinceNow <= 60 } ?? false)
         guard codexPollInFlightAccountID == nil, !isFreshForAccount else { return }
 
         codexPollInFlightAccountID = requestedAccountID
@@ -354,7 +172,7 @@ final class AccountManager: ObservableObject {
                 }
                 // A switch can occur while the old account's helper is still
                 // running. Re-evaluate immediately so the new account does not
-                // wait for the next 30-second refresh timer.
+                // wait for the next one-minute refresh timer.
                 pollCodexUsageIfStale()
             }
             do {
@@ -396,8 +214,7 @@ final class AccountManager: ObservableObject {
             return [Account(
                 provider: .claude, profileName: "not-detected",
                 email: nil, plan: nil, isActive: false, windows: [],
-                status: .noData(reason: "no Claude login found in ~/.claude.json"),
-                usageAccountID: nil)]
+                status: .noData(reason: "no Claude login found in ~/.claude.json"))]
         }
 
         var result: [Account] = []
@@ -441,8 +258,7 @@ final class AccountManager: ObservableObject {
             status: cached.map { .live($0.capturedAt) }
                 ?? .noData(reason: isActive
                     ? "sign in via “Add Claude account…” below to see limits"
-                    : "no reading yet"),
-            usageAccountID: uuid)
+                    : "no reading yet"))
     }
 
     /// Fetch live usage for EVERY Claude account we have a token for — each
@@ -450,7 +266,7 @@ final class AccountManager: ObservableObject {
     /// so all accounts' limits stay visible, not just the active one.
     private func pollClaudeUsageIfStale() {
         guard !claudePollInFlight,
-              lastClaudePoll.map({ -$0.timeIntervalSinceNow > 300 }) ?? true
+              lastClaudePoll.map({ -$0.timeIntervalSinceNow >= 60 }) ?? true
         else { return }
 
         let profiles = ClaudeProvider.listProfiles()

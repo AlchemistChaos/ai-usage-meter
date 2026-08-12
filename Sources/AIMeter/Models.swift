@@ -96,12 +96,6 @@ struct Account: Identifiable {
     let isActive: Bool
     let windows: [UsageWindow]
     let status: DataStatus
-    let usageAccountID: String?
-    let todayTokens: AttributedTokenStats
-    let last24HoursTokens: AttributedTokenStats
-    let last7DaysTokens: AttributedTokenStats
-    let thisMonthTokens: AttributedTokenStats
-    let thisYearTokens: AttributedTokenStats
 
     init(
         provider: ProviderKind,
@@ -110,13 +104,7 @@ struct Account: Identifiable {
         plan: String?,
         isActive: Bool,
         windows: [UsageWindow],
-        status: DataStatus,
-        usageAccountID: String? = nil,
-        todayTokens: AttributedTokenStats = AttributedTokenStats(),
-        last24HoursTokens: AttributedTokenStats = AttributedTokenStats(),
-        last7DaysTokens: AttributedTokenStats = AttributedTokenStats(),
-        thisMonthTokens: AttributedTokenStats = AttributedTokenStats(),
-        thisYearTokens: AttributedTokenStats = AttributedTokenStats()
+        status: DataStatus
     ) {
         self.provider = provider
         self.profileName = profileName
@@ -125,12 +113,6 @@ struct Account: Identifiable {
         self.isActive = isActive
         self.windows = windows
         self.status = status
-        self.usageAccountID = usageAccountID
-        self.todayTokens = todayTokens
-        self.last24HoursTokens = last24HoursTokens
-        self.last7DaysTokens = last7DaysTokens
-        self.thisMonthTokens = thisMonthTokens
-        self.thisYearTokens = thisYearTokens
     }
 
     var label: String { email ?? profileName }
@@ -138,12 +120,7 @@ struct Account: Identifiable {
     /// A copy with a different display email — used only by demo mode.
     func relabelled(_ newEmail: String) -> Account {
         Account(provider: provider, profileName: profileName, email: newEmail,
-                plan: plan, isActive: isActive, windows: windows, status: status,
-                usageAccountID: usageAccountID, todayTokens: todayTokens,
-                last24HoursTokens: last24HoursTokens,
-                last7DaysTokens: last7DaysTokens,
-                thisMonthTokens: thisMonthTokens,
-                thisYearTokens: thisYearTokens)
+                plan: plan, isActive: isActive, windows: windows, status: status)
     }
 
     /// Placeholder identities so marketing screenshots never expose real
@@ -180,13 +157,5 @@ struct Account: Identifiable {
         case let (nil, l?): return l
         default: return nil
         }
-    }
-
-    var hasAttributedTokens: Bool {
-        !todayTokens.isEmpty
-            || !last24HoursTokens.isEmpty
-            || !last7DaysTokens.isEmpty
-            || !thisMonthTokens.isEmpty
-            || !thisYearTokens.isEmpty
     }
 }

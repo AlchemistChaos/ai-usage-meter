@@ -142,6 +142,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
             showsClaudeWeekly: preference(
                 MenuBarPreferenceKey.claudeWeekly,
                 fallback: MenuBarSelection.standard.showsClaudeWeekly),
+            showsClaudeFable: preference(
+                MenuBarPreferenceKey.claudeFable,
+                fallback: MenuBarSelection.standard.showsClaudeFable),
             showsCodexWeekly: preference(
                 MenuBarPreferenceKey.codexWeekly,
                 fallback: MenuBarSelection.standard.showsCodexWeekly))

@@ -27,6 +27,12 @@ require 'private var codexPollInFlightAccountID: String\?' \
   "Codex polling does not track an in-flight account"
 require '(?s)func refresh\(\).*?pollCodexUsageIfStale\(\)' \
   "the refresh loop does not start live Codex polling"
+require 'Timer\.scheduledTimer\(withTimeInterval: 60, repeats: true\)' \
+  "the UI refresh loop does not run once per minute"
+require 'lastCodexPoll\.map \{ -\$0\.timeIntervalSinceNow <= 60 \}' \
+  "Codex polling is not throttled to one minute"
+require 'lastClaudePoll\.map\(\{ -\$0\.timeIntervalSinceNow >= 60 \}\)' \
+  "Claude polling is not throttled to one minute"
 require 'CodexRateLimitClient\.fetchSnapshot' \
   "the manager does not fetch the app-server snapshot"
 require '(?s)CodexProvider\.identity\(.*?ProfileStore\.activeCredentialPath\(\.codex\).*?accountID\s*== requestedAccountID' \

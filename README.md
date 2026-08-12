@@ -49,13 +49,14 @@ Inactive Codex limits come from the last local reading captured for that account
 
 There is no telemetry, analytics, hosted backend, or project-owned server.
 
-- Claude usage and profile requests go directly to official Anthropic endpoints in `ClaudeProvider.swift` and `ClaudeOAuth.swift`.
+- Claude usage and profile requests go directly to Anthropic-hosted OAuth endpoints in `ClaudeProvider.swift` and `ClaudeOAuth.swift`.
 - Adding a Codex account runs the installed official Codex CLI, which performs its login directly with OpenAI inside an isolated local state directory.
-- Codex usage is read locally from `~/.codex/logs_2.sqlite`; AI Meter does not call a Codex usage endpoint.
+- Active Codex limits come from the installed Codex client's `account/rateLimits/read` method. Rate-limit headers in `~/.codex/logs_2.sqlite` remain a last-known fallback.
 - The OAuth callback listener binds only to localhost.
 - Saved credentials live under `~/.ccmanager/profiles/` with owner-only `0600` permissions.
 - Codex switching backs up the active credential before replacing it and writes atomically.
-- The app does not send prompts, source code, transcripts, filenames, or usage data to any server operated by this project.
+- The app does not read Claude transcripts or import token-event history.
+- The app does not send prompts, source code, filenames, or usage data to any server operated by this project.
 
 Inspect the relevant implementation directly:
 
@@ -73,9 +74,9 @@ To print the local credential/data sources detected by the app:
 
 ## How usage is obtained
 
-**Claude:** the app polls Anthropic's OAuth usage endpoint for each stored profile at most once every five minutes.
+**Claude:** the app polls Anthropic's OAuth usage endpoint for each stored profile at most once per minute.
 
-**Codex:** the app asks the installed official Codex client for the active account's current `account/rateLimits/read` snapshot at most once every five minutes. The request uses Codex's app-server process and existing login; AI Meter never copies the token into its own network client. Legacy rate-limit headers in Codex's local SQLite log remain a fallback and supply the last known reading for inactive accounts. If an inactive account has no fresh reset timestamp, the UI says it becomes available after using that account instead of inventing a date.
+**Codex:** the app asks the installed official Codex client for the active account's current `account/rateLimits/read` snapshot at most once per minute. The request uses Codex's app-server process and existing login; AI Meter never copies the token into its own network client. Legacy rate-limit headers in Codex's local SQLite log remain a fallback and supply the last known reading for inactive accounts. If an inactive account has no fresh reset timestamp, the UI says it becomes available after using that account instead of inventing a date.
 
 ## Build and verify
 
@@ -94,6 +95,7 @@ swiftc -parse-as-library Sources/AIMeter/PopoverPlacement.swift \
 /tmp/notch-limits-popover-placement-tests
 bash Tests/StatusItemStructureHarness.sh
 bash Tests/CodexLivePollingStructureHarness.sh
+bash Tests/NoAnalyticsStructureHarness.sh
 ./build-app.sh release
 AIMETER_APP_PATH="AI Meter.app" bash Tests/InstalledStatusItemHarness.sh
 swiftc Sources/AIMeter/Models.swift \
@@ -136,7 +138,7 @@ swiftc -parse-as-library Sources/AIMeter/Models.swift \
 
 - Claude CLI switching is deliberately unsupported because it would require modifying Claude's own credential state.
 - Codex polls only the active account live; inactive accounts show their most recently cached reading.
-- The compact default shows Claude's 5-hour and Codex's weekly capacity. Use Settings → Menu bar to toggle Claude 5-hour, Claude weekly, and Codex weekly independently.
+- The compact default shows Claude's 5-hour and Codex's weekly capacity. Use Settings → Menu bar to toggle Claude 5-hour, Claude weekly, Claude Fable, and Codex weekly independently.
 - A selected menu-bar value displays `—` when that exact provider window is unavailable; it never substitutes a different window.
 - Locally built/ad-hoc signed apps are intended for your own Mac; public downloads should be Developer ID signed and notarized.
 

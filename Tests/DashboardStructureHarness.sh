@@ -99,6 +99,7 @@ rg -Fq 'Menu("Menu bar")' "$view" || {
 }
 rg -Fq 'Toggle("Claude 5-hour"' "$view" || exit 1
 rg -Fq 'Toggle("Claude weekly"' "$view" || exit 1
+rg -Fq 'Toggle("Claude Fable"' "$view" || exit 1
 rg -Fq 'Toggle("Codex weekly"' "$view" || exit 1
 rg -q 'Add OpenAI Codex account' "$view" || {
   echo "FAIL: isolated Codex login action is missing" >&2
@@ -138,33 +139,9 @@ rg -Uq 'if account\.provider == \.codex \{\n\s+Button\("Make Default"\)' "$view"
   echo "FAIL: Make Default should only be offered for Codex account switching" >&2
   exit 1
 }
-rg -Fq 'TokenSummaryRow(title: "Today"' "$view" || {
-  echo "FAIL: per-account Today token summary is missing" >&2
+if rg -q 'TokenSummaryRow|UsageHistoryView|Button\("History"\)' "$view"; then
+  echo "FAIL: token analytics UI is still present" >&2
   exit 1
-}
-rg -Fq 'TokenSummaryRow(title: "24h"' "$view" || {
-  echo "FAIL: per-account 24h token summary is missing" >&2
-  exit 1
-}
-rg -Fq 'TokenSummaryRow(title: "7d"' "$view" || {
-  echo "FAIL: per-account 7d token summary is missing" >&2
-  exit 1
-}
-rg -Fq 'TokenSummaryRow(title: "Month"' "$view" || {
-  echo "FAIL: per-account Month token summary is missing" >&2
-  exit 1
-}
-rg -Fq 'TokenSummaryRow(title: "Year"' "$view" || {
-  echo "FAIL: per-account Year token summary is missing" >&2
-  exit 1
-}
-rg -q 'History' "$view" || {
-  echo "FAIL: history entry point is missing" >&2
-  exit 1
-}
-rg -q 'UsageHistoryView' "$view" || {
-  echo "FAIL: usage history drill-down is not wired" >&2
-  exit 1
-}
+fi
 
 echo "PASS: dashboard header structure"
