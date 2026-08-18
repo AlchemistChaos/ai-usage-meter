@@ -21,6 +21,7 @@ final class AccountManager: ObservableObject {
     private var lastClaudePoll: Date?
     private var claudePollInFlight = false
     private var claudeUsageError: String?
+    private var claudeProfileErrorsByUUID: [String: String] = [:]
     init() {
         try? ProfileStore.ensureDirs()
         refresh()
@@ -247,6 +248,16 @@ final class AccountManager: ObservableObject {
     private func claudeAccount(
         name: String, uuid: String?, email: String?, plan: String?, isActive: Bool
     ) -> Account {
+        if let uuid, let error = claudeProfileErrorsByUUID[uuid] {
+            return Account(
+                provider: .claude,
+                profileName: name,
+                email: email,
+                plan: plan,
+                isActive: isActive,
+                windows: [],
+                status: .error(error))
+        }
         let cached = uuid.flatMap { SnapshotCache.get(accountID: "claude:\($0)") }
         return Account(
             provider: .claude,
@@ -280,18 +291,28 @@ final class AccountManager: ObservableObject {
 
             for name in profiles {
                 // Skip profiles that are the same account we already polled.
-                if let uuid = ClaudeProvider.profileToken(name)?.accountUuid,
-                   polled.contains(uuid) { continue }
+                let profileUUID = ClaudeProvider.profileToken(name)?.accountUuid
+                if let profileUUID, polled.contains(profileUUID) { continue }
                 do {
                     let tok = try await ClaudeProvider.freshToken(for: name)
+                    if let uuid = tok.accountUuid {
+                        claudeProfileErrorsByUUID[uuid] = nil
+                    }
                     let windows = try await ClaudeProvider.fetchUsage(token: tok.accessToken)
                     if let uuid = tok.accountUuid {
                         SnapshotCache.put(
                             accountID: "claude:\(uuid)",
                             snapshot: .init(windows: windows, plan: nil, capturedAt: Date()))
+                        claudeProfileErrorsByUUID[uuid] = nil
                         polled.insert(uuid)
                     }
-                } catch { failures.append("\(name): \(error.localizedDescription)") }
+                } catch {
+                    if let profileUUID,
+                       ClaudeProvider.isAuthenticationFailure(error) {
+                        claudeProfileErrorsByUUID[profileUUID] = error.localizedDescription
+                    }
+                    failures.append("\(name): \(error.localizedDescription)")
+                }
             }
 
             lastClaudePoll = Date()
@@ -343,12 +364,15 @@ final class AccountManager: ObservableObject {
     /// automatically. If the port is taken we fall back to the paste variant.
     func beginClaudeLogin(browser: Browser? = nil) {
         callbackServer?.stop()
+        logClaudeLogin("begin browser=\(browser?.name ?? "default")")
         callbackServer = ClaudeOAuth.CallbackServer { [weak self] code, state in
             Task { @MainActor in
+                self?.logClaudeLogin("callback received state_empty=\(state.isEmpty)")
                 self?.completeClaudeLogin(pasted: "\(code)#\(state)")
             }
         }
         let login = ClaudeOAuth.begin(usesCallback: callbackServer != nil)
+        logClaudeLogin("pending uses_callback=\(login.usesCallback)")
         pendingClaudeLogin = login
         if let browser {
             NSWorkspace.shared.open(
@@ -364,11 +388,16 @@ final class AccountManager: ObservableObject {
         guard let login = pendingClaudeLogin else { return }
         Task { @MainActor in
             do {
+                logClaudeLogin("exchange start uses_callback=\(login.usesCallback)")
                 let tokens = try await ClaudeOAuth.exchange(pasted: pasted, login: login)
+                logClaudeLogin("exchange ok")
                 let profile = try await ClaudeOAuth.fetchProfile(token: tokens.accessToken)
+                logClaudeLogin(
+                    "profile ok email=\(profile.email ?? "unknown") uuid=\(profile.accountUuid)")
                 let name = profile.email?.split(separator: "@").first.map(String.init)
                     ?? String(profile.accountUuid.prefix(8))
                 try ClaudeOAuth.saveProfile(name: name, tokens: tokens, profile: profile)
+                logClaudeLogin("save ok profile=\(name)")
                 pendingClaudeLogin = nil
                 callbackServer?.stop()
                 callbackServer = nil
@@ -376,15 +405,36 @@ final class AccountManager: ObservableObject {
                 lastClaudePoll = nil  // pull limits for the new account now
                 refresh()
             } catch {
+                logClaudeLogin("failed \(error.localizedDescription)")
                 lastError = error.localizedDescription
             }
         }
     }
 
     func cancelClaudeLogin() {
+        logClaudeLogin("cancel")
         pendingClaudeLogin = nil
         callbackServer?.stop()
         callbackServer = nil
+    }
+
+    private func logClaudeLogin(_ message: String) {
+        let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
+        let url = ProfileStore.root.appending(path: "claude-login.log")
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        if let data = line.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: url.path()) {
+                if let handle = try? FileHandle(forWritingTo: url) {
+                    _ = try? handle.seekToEnd()
+                    try? handle.write(contentsOf: data)
+                    try? handle.close()
+                }
+            } else {
+                try? data.write(to: url, options: .atomic)
+            }
+        }
     }
 
     // MARK: - Actions

@@ -126,9 +126,10 @@ enum ClaudeOAuth {
         let code = String(parts[0])
         let state = parts.count > 1 ? String(parts[1]) : login.state
 
-        var req = URLRequest(url: URL(string: "https://console.anthropic.com/v1/oauth/token")!)
+        var req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/oauth/token")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.timeoutInterval = 20
         req.httpBody = try JSONSerialization.data(withJSONObject: [
             "grant_type": "authorization_code",
@@ -143,9 +144,9 @@ enum ClaudeOAuth {
               let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let access = obj["access_token"] as? String
         else {
-            let body = String(data: data, encoding: .utf8) ?? ""
+            let body = errorDescription(from: data)
             throw NSError(domain: "ClaudeOAuth", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "Login code rejected: \(body.prefix(120))"])
+                NSLocalizedDescriptionKey: "Claude login exchange failed: \(body.prefix(180))"])
         }
         let account = obj["account"] as? [String: Any]
         return TokenSet(
@@ -155,6 +156,22 @@ enum ClaudeOAuth {
             scopes: (obj["scope"] as? String)?.components(separatedBy: " ") ?? [],
             subscriptionType: account?["subscription_type"] as? String
                 ?? obj["subscription_type"] as? String)
+    }
+
+    private static func errorDescription(from data: Data) -> String {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return String(data: data, encoding: .utf8) ?? "" }
+        if let description = obj["error_description"] as? String {
+            return description
+        }
+        if let error = obj["error"] as? [String: Any],
+           let message = error["message"] as? String {
+            return message
+        }
+        if let error = obj["error"] as? String {
+            return error
+        }
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     struct Profile {

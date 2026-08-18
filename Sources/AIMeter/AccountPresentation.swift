@@ -110,7 +110,8 @@ enum AccountPresentation {
         in account: Account,
         windowMinutes: Int
     ) -> Int? {
-        account.windows.first(where: {
+        guard account.status.isUsable else { return nil }
+        return account.windows.first(where: {
             $0.windowMinutes == windowMinutes
         }).map {
             Int($0.remainingPercent.rounded())

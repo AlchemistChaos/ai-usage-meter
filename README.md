@@ -96,6 +96,15 @@ swiftc -parse-as-library Sources/AIMeter/PopoverPlacement.swift \
 bash Tests/StatusItemStructureHarness.sh
 bash Tests/CodexLivePollingStructureHarness.sh
 bash Tests/NoAnalyticsStructureHarness.sh
+bash Tests/ClaudeAuthStructureHarness.sh
+swiftc -parse-as-library Sources/AIMeter/Models.swift \
+  Sources/AIMeter/CodexProvider.swift \
+  Sources/AIMeter/CodexLogin.swift \
+  Sources/AIMeter/ProfileStore.swift \
+  Sources/AIMeter/ClaudeProvider.swift \
+  Tests/ClaudeProviderHarness.swift \
+  -lsqlite3 -o /tmp/notch-limits-claude-provider-tests
+/tmp/notch-limits-claude-provider-tests
 ./build-app.sh release
 AIMETER_APP_PATH="AI Meter.app" bash Tests/InstalledStatusItemHarness.sh
 swiftc Sources/AIMeter/Models.swift \

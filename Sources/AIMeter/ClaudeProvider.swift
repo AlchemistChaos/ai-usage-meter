@@ -41,6 +41,29 @@ enum ClaudeProvider {
 
     // MARK: - Usage
 
+    enum ProviderError: LocalizedError {
+        case authenticationRequired(String)
+        case rateLimited(String)
+        case requestFailed(Int, String)
+
+        var errorDescription: String? {
+            switch self {
+            case .authenticationRequired(let message):
+                return message.isEmpty
+                    ? "Claude OAuth login expired. Re-authenticate this account."
+                    : message
+            case .rateLimited(let message):
+                return message.isEmpty
+                    ? "Claude usage is rate limited. Keeping the last reading."
+                    : message
+            case .requestFailed(let status, let message):
+                return message.isEmpty
+                    ? "Claude usage request failed with HTTP \(status)."
+                    : message
+            }
+        }
+    }
+
     /// Live poll of Anthropic's OAuth usage endpoint.
     static func fetchUsage(token: String) async throws -> [UsageWindow] {
         var req = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
@@ -49,8 +72,23 @@ enum ClaudeProvider {
         req.timeoutInterval = 15
 
         let (data, resp) = try await URLSession.shared.data(for: req)
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
+        guard let http = resp as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
+        }
+        return try decodeUsageResponse(data: data, statusCode: http.statusCode)
+    }
+
+    static func decodeUsageResponse(data: Data, statusCode: Int) throws -> [UsageWindow] {
+        guard statusCode == 200 else {
+            let message = errorMessage(from: data)
+            switch statusCode {
+            case 401, 403:
+                throw ProviderError.authenticationRequired(message)
+            case 429:
+                throw ProviderError.rateLimited(message)
+            default:
+                throw ProviderError.requestFailed(statusCode, message)
+            }
         }
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { throw URLError(.cannotParseResponse) }
@@ -93,6 +131,29 @@ enum ClaudeProvider {
             }
         }
         return windows
+    }
+
+    static func isAuthenticationFailure(_ error: Error) -> Bool {
+        if case ProviderError.authenticationRequired = error { return true }
+        if case OAuthRefreshError.rejected = error { return true }
+        if let urlError = error as? URLError,
+           urlError.code == .userAuthenticationRequired {
+            return true
+        }
+        return false
+    }
+
+    private static func errorMessage(from data: Data) -> String {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return "" }
+        if let message = obj["error_description"] as? String { return message }
+        if let message = obj["message"] as? String { return message }
+        if let error = obj["error"] as? [String: Any],
+           let message = error["message"] as? String {
+            return message
+        }
+        if let error = obj["error"] as? String { return error }
+        return ""
     }
 
     // MARK: - Profiles
@@ -142,6 +203,19 @@ enum ClaudeProvider {
         var isExpired: Bool { expiresAt.map { $0 <= Date().addingTimeInterval(60) } ?? false }
     }
 
+    enum OAuthRefreshError: LocalizedError {
+        case rejected(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .rejected(let message):
+                return message.isEmpty
+                    ? "Claude OAuth refresh was rejected. Re-authenticate this account."
+                    : "Claude OAuth refresh was rejected: \(message)"
+            }
+        }
+    }
+
     static func profileToken(_ name: String) -> ProfileToken? {
         guard let data = try? Data(contentsOf: profileFile(name)),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -166,9 +240,10 @@ enum ClaudeProvider {
             throw URLError(.userAuthenticationRequired)
         }
 
-        var req = URLRequest(url: URL(string: "https://console.anthropic.com/v1/oauth/token")!)
+        var req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/oauth/token")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.timeoutInterval = 15
         req.httpBody = try JSONSerialization.data(withJSONObject: [
             "grant_type": "refresh_token",
@@ -176,13 +251,18 @@ enum ClaudeProvider {
             "client_id": oauthClientID,
         ])
         let (data, resp) = try await URLSession.shared.data(for: req)
+        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200,
-              let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let newAccess = obj["access_token"] as? String
-        else { throw URLError(.userAuthenticationRequired) }
+              let newAccess = obj?["access_token"] as? String
+        else {
+            if let message = obj?["error_description"] as? String {
+                throw OAuthRefreshError.rejected(message)
+            }
+            throw URLError(.userAuthenticationRequired)
+        }
 
-        let newRefresh = obj["refresh_token"] as? String ?? refresh
-        let expiresAt = Date().addingTimeInterval((obj["expires_in"] as? Double) ?? 3600)
+        let newRefresh = obj?["refresh_token"] as? String ?? refresh
+        let expiresAt = Date().addingTimeInterval((obj?["expires_in"] as? Double) ?? 3600)
 
         // Persist the rotated pair into the profile file.
         if var stored = try? JSONSerialization.jsonObject(

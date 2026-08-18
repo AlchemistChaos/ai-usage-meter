@@ -27,7 +27,8 @@ private func account(
     _ provider: ProviderKind,
     _ name: String,
     active: Bool,
-    windows: [UsageWindow]
+    windows: [UsageWindow],
+    status: DataStatus = .live(Date(timeIntervalSince1970: 1))
 ) -> Account {
     Account(
         provider: provider,
@@ -36,7 +37,7 @@ private func account(
         plan: "pro",
         isActive: active,
         windows: windows,
-        status: .live(Date(timeIntervalSince1970: 1)))
+        status: status)
 }
 
 @main
@@ -128,6 +129,17 @@ enum AccountPresentationHarness {
             AccountPresentation.menuLabel(for: [claudeWithoutWeekly])
                 == "A 75",
             "default menu label should not reserve space for hidden metrics")
+
+        let authFailedClaude = account(
+            .claude,
+            "auth-failed-claude",
+            active: true,
+            windows: [window("5h", minutes: 300, used: 0)],
+            status: .error("OAuth login expired"))
+        expect(
+            AccountPresentation.menuLabel(for: [authFailedClaude, codex])
+                == "A — · C 45",
+            "auth-failed Claude accounts should not expose stale cached usage")
 
         expect(
             AccountPresentation.menuLabel(for: [codex]) == "C 45",
