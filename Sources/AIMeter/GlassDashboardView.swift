@@ -288,7 +288,7 @@ private struct ProviderHeader: View {
 
             Spacer()
 
-            Text(provider == .claude ? "Live usage" : "Local logs")
+            Text(provider == .claude ? "API usage" : "Local logs")
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.secondary)
         }

@@ -317,6 +317,9 @@ final class AccountManager: ObservableObject {
                     polled.insert(activeUUID)
                     } catch {
                         activeClaudeCodeFailure = ClaudeProvider.reconnectAccountMessage
+                        // Drive claudeAccount()'s suppression too, otherwise the card
+                        // keeps rendering the last cached windows as if they were live.
+                        claudeProfileErrorsByUUID[activeUUID] = ClaudeProvider.reconnectAccountMessage
                     }
                 }
             }
