@@ -74,7 +74,7 @@ To print the local credential/data sources detected by the app:
 
 ## How usage is obtained
 
-**Claude:** the app polls Anthropic's OAuth usage endpoint for each stored profile at most once per minute.
+**Claude:** for the active Claude Code account, the app first reads Claude Code statusline `rate_limits` captured in `~/.ccmanager/claude-statusline/latest.json`, then tries Claude Code's current OAuth credential, then falls back to the app-owned profile credential. Other saved Claude accounts still use app-owned OAuth profiles. When a profile credential expires, the last known reading stays visible as cached context and the UI asks you to reconnect that AI Meter profile instead of treating the Claude CLI login as broken.
 
 **Codex:** the app asks the installed official Codex client for the active account's current `account/rateLimits/read` snapshot at most once per minute. The request uses Codex's app-server process and existing login; AI Meter never copies the token into its own network client. Legacy rate-limit headers in Codex's local SQLite log remain a fallback and supply the last known reading for inactive accounts. If an inactive account has no fresh reset timestamp, the UI says it becomes available after using that account instead of inventing a date.
 
@@ -113,6 +113,14 @@ swiftc Sources/AIMeter/Models.swift \
   Tests/AccountPresentationHarness.swift \
   -o /tmp/notch-limits-presentation-tests
 /tmp/notch-limits-presentation-tests
+swiftc -parse-as-library Sources/AIMeter/Models.swift \
+  Sources/AIMeter/CodexProvider.swift \
+  Sources/AIMeter/CodexLogin.swift \
+  Sources/AIMeter/ProfileStore.swift \
+  Sources/AIMeter/SnapshotCache.swift \
+  Tests/SnapshotCacheHarness.swift \
+  -lsqlite3 -o /tmp/notch-limits-snapshot-cache-tests
+/tmp/notch-limits-snapshot-cache-tests
 swiftc Sources/AIMeter/CodexLogin.swift \
   Tests/CodexLoginHarness.swift \
   -o /tmp/notch-limits-codex-login-tests

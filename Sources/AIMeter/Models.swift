@@ -50,6 +50,9 @@ enum DataStatus: Equatable {
     case live(Date)
     /// Last known limit data for an account we are not polling live right now.
     case cached(Date)
+    /// The account's app-owned credential needs reconnecting, but cached usage
+    /// can still be shown as stale context.
+    case reconnectRequired(String, cachedAt: Date?)
     /// We know the account exists but have no usage figures.
     case noData(reason: String)
     /// Something is misconfigured.
@@ -58,6 +61,7 @@ enum DataStatus: Equatable {
     var isUsable: Bool {
         switch self {
         case .live, .cached: return true
+        case .reconnectRequired(_, let cachedAt): return cachedAt != nil
         case .noData, .error: return false
         }
     }
@@ -75,6 +79,9 @@ enum DataStatus: Equatable {
             return age(at)
         case .cached(let at):
             return "cached \(age(at))"
+        case .reconnectRequired(let message, let cachedAt):
+            guard let cachedAt else { return message }
+            return "\(message) · cached \(age(cachedAt))"
         case .noData(let reason): return reason
         case .error(let msg): return msg
         }

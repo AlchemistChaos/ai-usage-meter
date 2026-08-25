@@ -248,6 +248,7 @@ final class AccountManager: ObservableObject {
     private func claudeAccount(
         name: String, uuid: String?, email: String?, plan: String?, isActive: Bool
     ) -> Account {
+        let cached = uuid.flatMap { SnapshotCache.get(accountID: "claude:\($0)") }
         if let uuid, let error = claudeProfileErrorsByUUID[uuid] {
             return Account(
                 provider: .claude,
@@ -255,18 +256,17 @@ final class AccountManager: ObservableObject {
                 email: email,
                 plan: plan,
                 isActive: isActive,
-                windows: [],
-                status: .error(error))
+                windows: cached?.projectedWindows(dropsExpiredWindows: true) ?? [],
+                status: .reconnectRequired(error, cachedAt: cached?.capturedAt))
         }
-        let cached = uuid.flatMap { SnapshotCache.get(accountID: "claude:\($0)") }
         return Account(
             provider: .claude,
             profileName: name,
             email: email,
             plan: plan,
             isActive: isActive,
-            windows: cached?.projectedWindows() ?? [],
-            status: cached.map { .live($0.capturedAt) }
+            windows: cached?.projectedWindows(dropsExpiredWindows: true) ?? [],
+            status: cached.map { isActive ? .live($0.capturedAt) : .cached($0.capturedAt) }
                 ?? .noData(reason: isActive
                     ? "sign in via “Add Claude account…” below to see limits"
                     : "no reading yet"))
@@ -288,13 +288,45 @@ final class AccountManager: ObservableObject {
             defer { claudePollInFlight = false }
             var polled = Set<String>()
             var failures: [String] = []
+            let activeUUID = ClaudeProvider.identity()?.accountUuid
+            var activeClaudeCodeFailure: String?
+
+            if let activeUUID {
+                if let snapshot = ClaudeProvider.latestStatuslineSnapshot() {
+                    let merged = ClaudeProvider.mergeStatuslineSnapshot(
+                        snapshot,
+                        preservingModelWindowsFrom: SnapshotCache.get(
+                            accountID: "claude:\(activeUUID)"))
+                    SnapshotCache.put(
+                        accountID: "claude:\(activeUUID)",
+                        snapshot: merged)
+                    claudeProfileErrorsByUUID[activeUUID] = nil
+                    polled.insert(activeUUID)
+                } else {
+                    do {
+                    let tok = try ClaudeProvider.freshClaudeCodeToken()
+                    let windows = try await ClaudeProvider.fetchUsage(
+                        token: tok.accessToken)
+                    SnapshotCache.put(
+                        accountID: "claude:\(activeUUID)",
+                        snapshot: .init(
+                            windows: windows,
+                            plan: nil,
+                            capturedAt: Date()))
+                    claudeProfileErrorsByUUID[activeUUID] = nil
+                    polled.insert(activeUUID)
+                    } catch {
+                        activeClaudeCodeFailure = ClaudeProvider.reconnectAccountMessage
+                    }
+                }
+            }
 
             for name in profiles {
                 // Skip profiles that are the same account we already polled.
                 let profileUUID = ClaudeProvider.profileToken(name)?.accountUuid
                 if let profileUUID, polled.contains(profileUUID) { continue }
                 do {
-                    let tok = try await ClaudeProvider.freshToken(for: name)
+                    let tok = try ClaudeProvider.usableToken(for: name)
                     if let uuid = tok.accountUuid {
                         claudeProfileErrorsByUUID[uuid] = nil
                     }
@@ -309,10 +341,17 @@ final class AccountManager: ObservableObject {
                 } catch {
                     if let profileUUID,
                        ClaudeProvider.isAuthenticationFailure(error) {
-                        claudeProfileErrorsByUUID[profileUUID] = error.localizedDescription
+                        claudeProfileErrorsByUUID[profileUUID] =
+                            ClaudeProvider.reconnectAccountMessage
                     }
                     failures.append("\(name): \(error.localizedDescription)")
                 }
+            }
+
+            if let activeUUID,
+               !polled.contains(activeUUID),
+               let activeClaudeCodeFailure {
+                failures.append("Claude Code: \(activeClaudeCodeFailure)")
             }
 
             lastClaudePoll = Date()

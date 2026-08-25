@@ -12,10 +12,11 @@ for file in "$provider" "$oauth"; do
   fi
 done
 
-rg -q 'https://api\.anthropic\.com/v1/oauth/token' "$provider" || {
-  echo "FAIL: ClaudeProvider does not refresh tokens through api.anthropic.com" >&2
-  exit 1
-}
+# NOTE: ClaudeProvider deliberately no longer refreshes tokens at all. It borrows
+# Claude Code's credentials, and redeeming a refresh token rotates it server-side,
+# evicting the live CLI session. See Tests/NoTokenRotationHarness.sh, which asserts
+# the absence of that path. Only the login flow (ClaudeOAuth) talks to the token
+# endpoint now, exchanging an authorization_code.
 
 rg -q 'https://api\.anthropic\.com/v1/oauth/token' "$oauth" || {
   echo "FAIL: ClaudeOAuth does not exchange login codes through api.anthropic.com" >&2

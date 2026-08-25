@@ -19,15 +19,27 @@ struct CachedSnapshot: Codable {
 
     /// Windows with elapsed time applied: a 5h window that reset an hour ago is
     /// empty again, and reporting the old percentage would be actively wrong.
-    func projectedWindows(now: Date = Date()) -> [UsageWindow] {
-        windows.map { w in
+    func projectedWindows(
+        now: Date = Date(),
+        dropsExpiredWindows: Bool = false
+    ) -> [UsageWindow] {
+        windows.compactMap { w in
             let expired = w.resetsAt.map { $0 <= now } ?? false
+            if expired && dropsExpiredWindows { return nil }
             return UsageWindow(
                 label: w.label,
                 usedPercent: expired ? 0 : w.usedPercent,
                 windowMinutes: w.windowMinutes,
                 resetsAt: expired ? nil : w.resetsAt)
         }
+    }
+
+    static func shouldReplace(
+        existing: CachedSnapshot?,
+        with candidate: CachedSnapshot
+    ) -> Bool {
+        guard let existing else { return true }
+        return existing.capturedAt <= candidate.capturedAt
     }
 }
 
@@ -49,9 +61,7 @@ enum SnapshotCache {
 
     static func put(accountID: String, snapshot: CodexProvider.Snapshot) {
         var all = loadAll()
-        // Never let an older reading overwrite a newer one.
-        if let existing = all[accountID], existing.capturedAt >= snapshot.capturedAt { return }
-        all[accountID] = CachedSnapshot(
+        let candidate = CachedSnapshot(
             accountID: accountID,
             capturedAt: snapshot.capturedAt,
             plan: snapshot.plan,
@@ -61,6 +71,11 @@ enum SnapshotCache {
                       windowMinutes: $0.windowMinutes,
                       resetsAt: $0.resetsAt)
             })
+        // Never let an older reading overwrite a newer one, but allow an
+        // equal-timestamp reparse to fix provider-specific normalization.
+        guard CachedSnapshot.shouldReplace(existing: all[accountID], with: candidate)
+        else { return }
+        all[accountID] = candidate
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let data = try? JSONEncoder().encode(all) {

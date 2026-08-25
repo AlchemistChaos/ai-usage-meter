@@ -141,6 +141,30 @@ enum AccountPresentationHarness {
                 == "A — · C 45",
             "auth-failed Claude accounts should not expose stale cached usage")
 
+        let reconnectAt = Date(timeIntervalSince1970: 1)
+        let reconnectClaude = account(
+            .claude,
+            "reconnect-claude",
+            active: true,
+            windows: [fiveHour, weekly],
+            status: .reconnectRequired(
+                "AI Meter connection expired. Reconnect this Claude account.",
+                cachedAt: reconnectAt))
+        expect(
+            reconnectClaude.status.isUsable,
+            "reconnect-required accounts with cached usage should remain usable")
+        expect(
+            reconnectClaude.status.description
+                .contains("AI Meter connection expired"),
+            "reconnect-required status should explain the app profile problem")
+        expect(
+            !reconnectClaude.status.description.contains("OAuth"),
+            "reconnect-required status should not leak OAuth internals")
+        expect(
+            AccountPresentation.menuLabel(for: [reconnectClaude, codex])
+                == "A 75 · C 45",
+            "reconnect-required Claude accounts should keep cached usage in the menu")
+
         expect(
             AccountPresentation.menuLabel(for: [codex]) == "C 45",
             "Codex-only menu labels should stay compact")

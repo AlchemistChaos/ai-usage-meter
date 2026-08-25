@@ -1,12 +1,15 @@
 import Foundation
+import Security
 
-/// Claude Code support: accounts are added via the in-app OAuth login and
-/// stored as app-owned profiles — the macOS keychain is never touched.
+/// Claude Code support: the active account can use Claude Code's current
+/// credential, while additional accounts are stored as app-owned profiles.
 ///
 /// Identity of the CLI's current login is read (prompt-free) from
 /// `~/.claude.json` → `oauthAccount`; usage comes from
-/// `GET https://api.anthropic.com/api/oauth/usage` per stored token.
+/// `GET https://api.anthropic.com/api/oauth/usage`.
 enum ClaudeProvider {
+    static let reconnectAccountMessage =
+        "AI Meter connection expired. Reconnect this Claude account."
 
     // MARK: - Identity
 
@@ -133,6 +136,98 @@ enum ClaudeProvider {
         return windows
     }
 
+    static func statuslineSnapshotFile() -> URL {
+        ProfileStore.root
+            .appending(path: "claude-statusline")
+            .appending(path: "latest.json")
+    }
+
+    static func latestStatuslineSnapshot() -> CodexProvider.Snapshot? {
+        let url = statuslineSnapshotFile()
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let capturedAt = CodexProvider.modificationDate(at: url) ?? Date()
+        return decodeStatuslineSnapshot(data: data, capturedAt: capturedAt)
+    }
+
+    static func decodeStatuslineSnapshot(
+        data: Data,
+        capturedAt: Date
+    ) -> CodexProvider.Snapshot? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rateLimits = obj["rate_limits"] as? [String: Any]
+        else { return nil }
+        let model = obj["model"] as? [String: Any]
+        let modelID = (model?["id"] as? String)?.lowercased() ?? ""
+        let modelName = (model?["display_name"] as? String)?.lowercased() ?? ""
+        let isFable = modelID.contains("fable") || modelName.contains("fable")
+
+        func doubleValue(_ value: Any?) -> Double? {
+            if let value = value as? Double { return value }
+            if let value = value as? Int { return Double(value) }
+            if let value = value as? String { return Double(value) }
+            return nil
+        }
+
+        func dateValue(_ value: Any?) -> Date? {
+            if let seconds = doubleValue(value) {
+                let divisor = seconds > 10_000_000_000 ? 1000.0 : 1.0
+                return Date(timeIntervalSince1970: seconds / divisor)
+            }
+            guard let string = value as? String else { return nil }
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = fractional.date(from: string) { return date }
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            return plain.date(from: string)
+        }
+
+        func window(_ key: String, label: String, minutes: Int) -> UsageWindow? {
+            guard let raw = rateLimits[key] as? [String: Any],
+                  let used = doubleValue(
+                    raw["used_percentage"] ?? raw["utilization"] ?? raw["percent"])
+            else { return nil }
+            var resetsAt = dateValue(raw["resets_at"])
+            let interval = TimeInterval(minutes * 60)
+            while let reset = resetsAt,
+                  interval > 0,
+                  reset <= capturedAt {
+                resetsAt = reset.addingTimeInterval(interval)
+            }
+            return UsageWindow(
+                label: label,
+                usedPercent: used,
+                windowMinutes: minutes,
+                resetsAt: resetsAt)
+        }
+
+        let windows = [
+            window("five_hour", label: "5h", minutes: 300),
+            window(
+                "seven_day",
+                label: isFable ? "Fable wk" : "Weekly",
+                minutes: 10_080),
+        ].compactMap { $0 }
+        guard !windows.isEmpty else { return nil }
+        return .init(windows: windows, plan: nil, capturedAt: capturedAt)
+    }
+
+    static func mergeStatuslineSnapshot(
+        _ statusline: CodexProvider.Snapshot,
+        preservingModelWindowsFrom cached: CachedSnapshot?,
+        now: Date = Date()
+    ) -> CodexProvider.Snapshot {
+        let statuslineLabels = Set(statusline.windows.map(\.label))
+        let preserved = cached?.projectedWindows(
+            now: now,
+            dropsExpiredWindows: true)
+            .filter { !statuslineLabels.contains($0.label) } ?? []
+        return .init(
+            windows: statusline.windows + preserved,
+            plan: statusline.plan ?? cached?.plan,
+            capturedAt: statusline.capturedAt)
+    }
+
     static func isAuthenticationFailure(_ error: Error) -> Bool {
         if case ProviderError.authenticationRequired = error { return true }
         if case OAuthRefreshError.rejected = error { return true }
@@ -194,6 +289,7 @@ enum ClaudeProvider {
 
     /// Claude Code's public OAuth client id, needed for the refresh grant.
     private static let oauthClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+    private static let claudeCodeKeychainService = "Claude Code-credentials"
 
     struct ProfileToken {
         let accessToken: String
@@ -209,15 +305,20 @@ enum ClaudeProvider {
         var errorDescription: String? {
             switch self {
             case .rejected(let message):
-                return message.isEmpty
-                    ? "Claude OAuth refresh was rejected. Re-authenticate this account."
-                    : "Claude OAuth refresh was rejected: \(message)"
+                return message.localizedCaseInsensitiveContains("expired")
+                    ? ClaudeProvider.reconnectAccountMessage
+                    : "AI Meter connection was rejected. Reconnect this Claude account."
             }
         }
     }
 
     static func profileToken(_ name: String) -> ProfileToken? {
-        guard let data = try? Data(contentsOf: profileFile(name)),
+        guard let data = try? Data(contentsOf: profileFile(name)) else { return nil }
+        return decodeProfileToken(data: data)
+    }
+
+    static func decodeProfileToken(data: Data) -> ProfileToken? {
+        guard
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let oauth = obj["claudeAiOauth"] as? [String: Any],
               let token = oauth["accessToken"] as? String
@@ -229,59 +330,57 @@ enum ClaudeProvider {
             accountUuid: (obj["_ccmanagerIdentity"] as? [String: String])?["accountUuid"])
     }
 
-    /// Get a working access token for a stored profile, refreshing via OAuth
-    /// if it has expired. A refresh rotates the refresh token too, so the new
-    /// pair is persisted back into the profile file immediately — losing it
-    /// would strand the account.
-    static func freshToken(for name: String) async throws -> ProfileToken {
+    static func claudeCodeCredentialsFile() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appending(path: ".claude/.credentials.json")
+    }
+
+    static func claudeCodeToken() -> ProfileToken? {
+        if let keychainData = claudeCodeKeychainData(),
+           let token = decodeProfileToken(data: keychainData) {
+            return token
+        }
+        guard let data = try? Data(contentsOf: claudeCodeCredentialsFile()) else {
+            return nil
+        }
+        return decodeProfileToken(data: data)
+    }
+
+    static func freshClaudeCodeToken() throws -> ProfileToken {
+        guard let token = claudeCodeToken() else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        guard !token.isExpired else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        return token
+    }
+
+    private static func claudeCodeKeychainData() -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: claudeCodeKeychainService,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess else { return nil }
+        return result as? Data
+    }
+
+    /// Read a stored profile's token WITHOUT refreshing it.
+    ///
+    /// The meter borrows Claude Code's OAuth credentials. Redeeming a refresh
+    /// token rotates it server-side, which invalidates every other holder of
+    /// that chain — including the live Claude Code CLI session, which then
+    /// reports "sign in expired". So this path is deliberately read-only: an
+    /// expired token surfaces as an auth failure and the account reads as
+    /// stale until Claude Code refreshes it itself.
+    static func usableToken(for name: String) throws -> ProfileToken {
         guard let tok = profileToken(name) else { throw CCError.missingProfile(name) }
-        guard tok.isExpired else { return tok }
-        guard let refresh = tok.refreshToken else {
-            throw URLError(.userAuthenticationRequired)
-        }
-
-        var req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/oauth/token")!)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.timeoutInterval = 15
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "grant_type": "refresh_token",
-            "refresh_token": refresh,
-            "client_id": oauthClientID,
-        ])
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200,
-              let newAccess = obj?["access_token"] as? String
-        else {
-            if let message = obj?["error_description"] as? String {
-                throw OAuthRefreshError.rejected(message)
-            }
-            throw URLError(.userAuthenticationRequired)
-        }
-
-        let newRefresh = obj?["refresh_token"] as? String ?? refresh
-        let expiresAt = Date().addingTimeInterval((obj?["expires_in"] as? Double) ?? 3600)
-
-        // Persist the rotated pair into the profile file.
-        if var stored = try? JSONSerialization.jsonObject(
-            with: Data(contentsOf: profileFile(name))) as? [String: Any],
-           var oauth = stored["claudeAiOauth"] as? [String: Any] {
-            oauth["accessToken"] = newAccess
-            oauth["refreshToken"] = newRefresh
-            oauth["expiresAt"] = expiresAt.timeIntervalSince1970 * 1000
-            stored["claudeAiOauth"] = oauth
-            if let out = try? JSONSerialization.data(withJSONObject: stored) {
-                try? out.write(to: profileFile(name), options: .atomic)
-                try? FileManager.default.setAttributes(
-                    [.posixPermissions: 0o600], ofItemAtPath: profileFile(name).path())
-            }
-        }
-
-        return ProfileToken(
-            accessToken: newAccess, refreshToken: newRefresh,
-            expiresAt: expiresAt, accountUuid: tok.accountUuid)
+        guard !tok.isExpired else { throw URLError(.userAuthenticationRequired) }
+        return tok
     }
 
     // MARK: - Probe (diagnostics)
