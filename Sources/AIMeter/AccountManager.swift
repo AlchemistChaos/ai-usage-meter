@@ -281,7 +281,10 @@ final class AccountManager: ObservableObject {
         else { return }
 
         let profiles = ClaudeProvider.listProfiles()
-        guard !profiles.isEmpty else { return }
+        // The active Claude Code account comes from Claude Code itself (identity +
+        // statusline + keychain), not from a saved profile — so having zero saved
+        // profiles must not skip the poll, or a fresh install never shows Claude.
+        guard !profiles.isEmpty || ClaudeProvider.identity() != nil else { return }
 
         claudePollInFlight = true
         Task { @MainActor in
