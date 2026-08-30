@@ -35,7 +35,7 @@ Open the settings cog in the dashboard.
 
 ### Claude
 
-Choose **Add Anthropic account**, select a browser, and complete the OAuth flow. Stored profiles are polled independently, so inactive Claude accounts can still show fresh usage.
+Choose **Add Anthropic account**, select a browser, and complete the OAuth flow for each account you want to monitor. Profiles are keyed by Anthropic account UUID rather than email prefix, so accounts with similar addresses cannot overwrite each other. Stored profiles are polled independently, while Claude Code's active login remains untouched.
 
 ### Codex
 
@@ -43,7 +43,7 @@ Choose **Add OpenAI Codex account** and sign in through the browser. AI Meter la
 
 **Import OpenAI Codex login** remains available for saving whichever account is already active in the normal Codex CLI.
 
-Inactive Codex limits come from the last local reading captured for that account. Switch to it and use Codex once to record fresh limits.
+Every saved Codex profile is polled through its own isolated official Codex app-server state. Switching is optional and no longer required merely to refresh an inactive account's limits.
 
 ## Privacy and network behavior
 
@@ -51,7 +51,7 @@ There is no telemetry, analytics, hosted backend, or project-owned server.
 
 - Claude usage and profile requests go directly to Anthropic-hosted OAuth endpoints in `ClaudeProvider.swift` and `ClaudeOAuth.swift`.
 - Adding a Codex account runs the installed official Codex CLI, which performs its login directly with OpenAI inside an isolated local state directory.
-- Active Codex limits come from the installed Codex client's `account/rateLimits/read` method. Rate-limit headers in `~/.codex/logs_2.sqlite` remain a last-known fallback.
+- Codex limits come from the installed Codex client's `account/rateLimits/read` method. Saved accounts use isolated `CODEX_HOME` directories; rate-limit headers in `~/.codex/logs_2.sqlite` remain a last-known fallback.
 - The OAuth callback listener binds only to localhost.
 - Saved credentials live under `~/.ccmanager/profiles/` with owner-only `0600` permissions.
 - Codex switching backs up the active credential before replacing it and writes atomically.
@@ -62,6 +62,7 @@ Inspect the relevant implementation directly:
 
 - [`ClaudeOAuth.swift`](Sources/AIMeter/ClaudeOAuth.swift)
 - [`ClaudeProvider.swift`](Sources/AIMeter/ClaudeProvider.swift)
+- [`ClaudeProfileStore.swift`](Sources/AIMeter/ClaudeProfileStore.swift)
 - [`CodexLogin.swift`](Sources/AIMeter/CodexLogin.swift)
 - [`CodexProvider.swift`](Sources/AIMeter/CodexProvider.swift)
 - [`ProfileStore.swift`](Sources/AIMeter/ProfileStore.swift)
@@ -74,9 +75,9 @@ To print the local credential/data sources detected by the app:
 
 ## How usage is obtained
 
-**Claude:** for the active Claude Code account, the app first reads Claude Code statusline `rate_limits` captured in `~/.ccmanager/claude-statusline/latest.json`, then tries Claude Code's current OAuth credential, then falls back to the app-owned profile credential. Other saved Claude accounts still use app-owned OAuth profiles. When a profile credential expires, the last known reading stays visible as cached context and the UI asks you to reconnect that AI Meter profile instead of treating the Claude CLI login as broken.
+**Claude:** for the active Claude Code account, the app first reads Claude Code statusline `rate_limits` captured in `~/.ccmanager/claude-statusline/latest.json`, then tries Claude Code's current unexpired OAuth credential. Every account added in AI Meter has a separate UUID-keyed OAuth profile. AI Meter refreshes only those app-owned chains and never rotates or writes Claude Code's credential.
 
-**Codex:** the app asks the installed official Codex client for the active account's current `account/rateLimits/read` snapshot at most once per minute. The request uses Codex's app-server process and existing login; AI Meter never copies the token into its own network client. Legacy rate-limit headers in Codex's local SQLite log remain a fallback and supply the last known reading for inactive accounts. If an inactive account has no fresh reset timestamp, the UI says it becomes available after using that account instead of inventing a date.
+**Codex:** the app asks the installed official Codex client for `account/rateLimits/read` at most once per minute per account. Saved profiles launch app-server with that profile directory as isolated `CODEX_HOME`; the active `~/.codex/auth.json` is never replaced during background polling. Legacy local rate-limit headers remain a fallback for the active account.
 
 ## Build and verify
 
@@ -97,11 +98,16 @@ bash Tests/StatusItemStructureHarness.sh
 bash Tests/CodexLivePollingStructureHarness.sh
 bash Tests/NoAnalyticsStructureHarness.sh
 bash Tests/ClaudeAuthStructureHarness.sh
+bash Tests/NoTokenRotationHarness.sh
+bash Tests/AllClaudeAccountsStructureHarness.sh
 swiftc -parse-as-library Sources/AIMeter/Models.swift \
   Sources/AIMeter/CodexProvider.swift \
   Sources/AIMeter/CodexLogin.swift \
   Sources/AIMeter/ProfileStore.swift \
+  Sources/AIMeter/SnapshotCache.swift \
+  Sources/AIMeter/ClaudeProfileStore.swift \
   Sources/AIMeter/ClaudeProvider.swift \
+  Sources/AIMeter/ClaudeOAuth.swift \
   Tests/ClaudeProviderHarness.swift \
   -lsqlite3 -o /tmp/notch-limits-claude-provider-tests
 /tmp/notch-limits-claude-provider-tests
@@ -118,6 +124,9 @@ swiftc -parse-as-library Sources/AIMeter/Models.swift \
   Sources/AIMeter/CodexLogin.swift \
   Sources/AIMeter/ProfileStore.swift \
   Sources/AIMeter/SnapshotCache.swift \
+  Sources/AIMeter/ClaudeProfileStore.swift \
+  Sources/AIMeter/ClaudeOAuth.swift \
+  Sources/AIMeter/ClaudeProvider.swift \
   Tests/SnapshotCacheHarness.swift \
   -lsqlite3 -o /tmp/notch-limits-snapshot-cache-tests
 /tmp/notch-limits-snapshot-cache-tests
@@ -147,14 +156,15 @@ swiftc -parse-as-library Sources/AIMeter/Models.swift \
 | `NativeGlassBackground.swift` | Clear native glass background that cannot intercept input |
 | `AccountManager.swift` | Refresh loop, account actions, and login coordination |
 | `MenuBarPreferences.swift` | Persistent menu-bar metric selections and compact defaults |
-| `ClaudeProvider.swift` / `ClaudeOAuth.swift` | Claude profiles, OAuth, and live limits |
+| `ClaudeProfileStore.swift` | UUID-keyed Claude profile storage, migration, provenance, and atomic writes |
+| `ClaudeProvider.swift` / `ClaudeOAuth.swift` | Claude OAuth, guarded app-owned refresh, and live limits |
 | `CodexProvider.swift` / `CodexLogin.swift` | Local Codex limits and isolated account login |
 | `ProfileStore.swift` | Owner-only profile storage, backups, and atomic switching |
 
 ## Limitations
 
 - Claude CLI switching is deliberately unsupported because it would require modifying Claude's own credential state.
-- Codex polls only the active account live; inactive accounts show their most recently cached reading.
+- All saved Codex accounts are polled live through isolated official app-server processes.
 - The compact default shows Claude's 5-hour and Codex's weekly capacity. Use Settings → Menu bar to toggle Claude 5-hour, Claude weekly, Claude Fable, and Codex weekly independently.
 - A selected menu-bar value displays `—` when that exact provider window is unavailable; it never substitutes a different window.
 - Locally built/ad-hoc signed apps are intended for your own Mac; public downloads should be Developer ID signed and notarized.

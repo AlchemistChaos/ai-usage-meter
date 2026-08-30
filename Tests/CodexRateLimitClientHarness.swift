@@ -24,6 +24,15 @@ private func expectThrows(
 @main
 enum CodexRateLimitClientHarness {
     static func main() async throws {
+        if let index = CommandLine.arguments.firstIndex(of: "--home"),
+           index + 1 < CommandLine.arguments.count {
+            let snapshot = try await CodexRateLimitClient.fetchSnapshot(
+                codexHome: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+            for window in snapshot.windows {
+                print("ISOLATED: \(window.label) \(window.usedPercent)% used")
+            }
+            return
+        }
         if CommandLine.arguments.contains("--live") {
             let snapshot = try await CodexRateLimitClient.fetchSnapshot()
             for window in snapshot.windows {
@@ -35,6 +44,17 @@ enum CodexRateLimitClientHarness {
         expect(CodexRateLimitClient.appServerArguments
                == ["app-server", "--listen", "stdio://"],
                "client should launch the stdio app-server transport")
+
+        let isolatedHome = URL(fileURLWithPath: "/tmp/codex-account-a")
+        let environment = CodexRateLimitClient.processEnvironment(
+            codexHome: isolatedHome,
+            base: ["PATH": "/usr/bin"])
+        expect(environment["CODEX_HOME"] == isolatedHome.path(),
+               "saved-account poll must receive isolated CODEX_HOME")
+        expect(environment["CODEX_SQLITE_HOME"] == isolatedHome.path(),
+               "saved-account poll state must remain in isolated home")
+        expect(environment["PATH"] == "/usr/bin",
+               "isolated polling must preserve the base environment")
 
         let requests = String(
             decoding: CodexRateLimitClient.requestPayload(), as: UTF8.self)

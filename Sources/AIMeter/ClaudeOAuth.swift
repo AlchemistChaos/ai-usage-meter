@@ -158,6 +158,58 @@ enum ClaudeOAuth {
                 ?? obj["subscription_type"] as? String)
     }
 
+    static func refreshRequest(refreshToken: String) throws -> URLRequest {
+        var request = URLRequest(
+            url: URL(string: "https://api.anthropic.com/v1/oauth/token")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 20
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "grant_type": "refresh_token",
+            "refresh_token": refreshToken,
+            "client_id": clientID,
+        ])
+        return request
+    }
+
+    static func decodeRefreshResponse(
+        data: Data,
+        statusCode: Int,
+        existing: TokenSet,
+        now: Date = Date()
+    ) throws -> TokenSet {
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard statusCode == 200,
+              let accessToken = object?["access_token"] as? String
+        else {
+            throw ClaudeProvider.OAuthRefreshError.rejected(errorDescription(from: data))
+        }
+        let scope = object?["scope"] as? String
+        return TokenSet(
+            accessToken: accessToken,
+            refreshToken: object?["refresh_token"] as? String ?? existing.refreshToken,
+            expiresAt: now.addingTimeInterval(
+                (object?["expires_in"] as? Double) ?? 3_600),
+            scopes: scope?.components(separatedBy: " ") ?? existing.scopes,
+            subscriptionType: (object?["account"] as? [String: Any])?["subscription_type"] as? String
+                ?? object?["subscription_type"] as? String
+                ?? existing.subscriptionType)
+    }
+
+    static func refresh(tokens: TokenSet) async throws -> TokenSet {
+        guard let refreshToken = tokens.refreshToken, !refreshToken.isEmpty else {
+            throw URLError(.userAuthenticationRequired)
+        }
+        let request = try refreshRequest(refreshToken: refreshToken)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        return try decodeRefreshResponse(
+            data: data, statusCode: http.statusCode, existing: tokens)
+    }
+
     private static func errorDescription(from data: Data) -> String {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return String(data: data, encoding: .utf8) ?? "" }
@@ -207,7 +259,7 @@ enum ClaudeOAuth {
     }
 
     /// Save a fresh login as a stored profile (same shape as imported ones).
-    static func saveProfile(name: String, tokens: TokenSet, profile: Profile) throws {
+    static func saveProfile(tokens: TokenSet, profile: Profile) throws {
         let obj: [String: Any] = [
             "claudeAiOauth": [
                 "accessToken": tokens.accessToken,
@@ -222,13 +274,14 @@ enum ClaudeOAuth {
                 "plan": profile.plan ?? "",
             ],
         ]
-        let dest = ClaudeProvider.profileFile(name)
-        try FileManager.default.createDirectory(
-            at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
         let out = try JSONSerialization.data(withJSONObject: obj)
-        try out.write(to: dest, options: .atomic)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600], ofItemAtPath: dest.path())
+        try ClaudeProfileStore.saveCredential(
+            out,
+            identity: .init(
+                accountUUID: profile.accountUuid,
+                email: profile.email,
+                plan: profile.plan),
+            origin: .appOAuth)
     }
 
     private static func randomURLSafe(_ bytes: Int) -> String {

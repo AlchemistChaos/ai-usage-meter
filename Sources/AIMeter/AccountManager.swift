@@ -16,17 +16,23 @@ final class AccountManager: ObservableObject {
     private var lastCodexLiveSnapshotAccountID: String?
     private var lastCodexLiveSnapshotCapturedAt: Date?
     private var codexPollInFlightAccountID: String?
+    private var codexProfilePollInFlight = Set<String>()
+    private var lastCodexProfilePoll: [String: Date] = [:]
+    private var codexProfileErrorsByAccountID: [String: String] = [:]
     private var codexUsageError: String?
     /// Claude usage is a real network call — poll at most once a minute.
     private var lastClaudePoll: Date?
     private var claudePollInFlight = false
     private var claudeUsageError: String?
     private var claudeProfileErrorsByUUID: [String: String] = [:]
-    init() {
+    init(startPolling: Bool = true) {
         try? ProfileStore.ensureDirs()
-        refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.refresh() }
+        try? ClaudeProfileStore.migrateLegacyProfiles()
+        if startPolling {
+            refresh()
+            timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.refresh() }
+            }
         }
     }
 
@@ -34,6 +40,7 @@ final class AccountManager: ObservableObject {
         rebuildAccounts()
         lastRefresh = Date()
         pollCodexUsageIfStale()
+        pollSavedCodexProfilesIfStale()
         pollClaudeUsageIfStale()
     }
 
@@ -123,12 +130,17 @@ final class AccountManager: ObservableObject {
                 continue
             }
             let cached = SnapshotCache.get(accountID: id.accountID)
-            let status: DataStatus = cached.map {
-                codexDataStatus(
-                    cachedAt: $0.capturedAt,
-                    accountID: id.accountID,
-                    activeAccountID: activeAccountID)
-            } ?? .noData(reason: "no reading yet — switch to it and use Codex once")
+            let status: DataStatus
+            if let error = codexProfileErrorsByAccountID[id.accountID] {
+                status = .reconnectRequired(error, cachedAt: cached?.capturedAt)
+            } else {
+                status = cached.map {
+                    codexDataStatus(
+                        cachedAt: $0.capturedAt,
+                        accountID: id.accountID,
+                        activeAccountID: activeAccountID)
+                } ?? .noData(reason: "waiting for first live reading")
+            }
             result.append(Account(
                 provider: .codex,
                 profileName: name,
@@ -204,6 +216,46 @@ final class AccountManager: ObservableObject {
                 lastCodexPollAccountID = requestedAccountID
                 codexUsageError = "Codex: \(error.localizedDescription)"
                 publishUsageErrors()
+            }
+        }
+    }
+
+    /// Poll saved accounts through isolated Codex homes so every account can
+    /// stay fresh without replacing the credential active in Codex CLI.
+    private func pollSavedCodexProfilesIfStale() {
+        let activeAccountID = CodexProvider.identity(
+            at: ProfileStore.activeCredentialPath(.codex))?.accountID
+        for name in ProfileStore.listProfiles(.codex) {
+            let credential = ProfileStore.profileFile(.codex, name)
+            guard let identity = CodexProvider.identity(at: credential),
+                  identity.accountID != activeAccountID
+            else { continue }
+            let accountID = identity.accountID
+            let fresh = lastCodexProfilePoll[accountID].map {
+                -$0.timeIntervalSinceNow <= 60
+            } ?? false
+            guard !fresh, !codexProfilePollInFlight.contains(accountID) else { continue }
+
+            codexProfilePollInFlight.insert(accountID)
+            let home = credential.deletingLastPathComponent()
+            Task { @MainActor in
+                defer {
+                    codexProfilePollInFlight.remove(accountID)
+                    lastCodexProfilePoll[accountID] = Date()
+                }
+                do {
+                    let snapshot = try await CodexRateLimitClient.fetchSnapshot(
+                        codexHome: home)
+                    guard CodexProvider.identity(at: credential)?.accountID == accountID
+                    else { return }
+                    SnapshotCache.put(accountID: accountID, snapshot: snapshot)
+                    codexProfileErrorsByAccountID[accountID] = nil
+                    rebuildAccounts()
+                } catch {
+                    codexProfileErrorsByAccountID[accountID] =
+                        "Codex login expired. Add this Codex account again to reconnect it."
+                    rebuildAccounts()
+                }
             }
         }
     }
@@ -332,7 +384,7 @@ final class AccountManager: ObservableObject {
                 let profileUUID = ClaudeProvider.profileToken(name)?.accountUuid
                 if let profileUUID, polled.contains(profileUUID) { continue }
                 do {
-                    let tok = try ClaudeProvider.usableToken(for: name)
+                    let tok = try await ClaudeProvider.usableToken(for: name)
                     if let uuid = tok.accountUuid {
                         claudeProfileErrorsByUUID[uuid] = nil
                     }
@@ -439,10 +491,8 @@ final class AccountManager: ObservableObject {
                 let profile = try await ClaudeOAuth.fetchProfile(token: tokens.accessToken)
                 logClaudeLogin(
                     "profile ok email=\(profile.email ?? "unknown") uuid=\(profile.accountUuid)")
-                let name = profile.email?.split(separator: "@").first.map(String.init)
-                    ?? String(profile.accountUuid.prefix(8))
-                try ClaudeOAuth.saveProfile(name: name, tokens: tokens, profile: profile)
-                logClaudeLogin("save ok profile=\(name)")
+                try ClaudeOAuth.saveProfile(tokens: tokens, profile: profile)
+                logClaudeLogin("save ok profile=\(profile.accountUuid.prefix(8))")
                 pendingClaudeLogin = nil
                 callbackServer?.stop()
                 callbackServer = nil
