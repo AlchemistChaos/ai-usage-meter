@@ -16,6 +16,8 @@ final class AccountManager: ObservableObject {
     private var lastCodexLiveSnapshotAccountID: String?
     private var lastCodexLiveSnapshotCapturedAt: Date?
     private var codexPollInFlightAccountID: String?
+    private var codexProfilePollInFlight = Set<String>()
+    private var lastCodexProfilePoll: [String: Date] = [:]
     private var codexUsageError: String?
     /// Claude usage is a real network call — poll at most once a minute.
     private var lastClaudePoll: Date?
@@ -35,6 +37,7 @@ final class AccountManager: ObservableObject {
         rebuildAccounts()
         lastRefresh = Date()
         pollCodexUsageIfStale()
+        pollSavedCodexProfilesIfStale()
         pollClaudeUsageIfStale()
     }
 
@@ -205,6 +208,44 @@ final class AccountManager: ObservableObject {
                 lastCodexPollAccountID = requestedAccountID
                 codexUsageError = "Codex: \(error.localizedDescription)"
                 publishUsageErrors()
+            }
+        }
+    }
+
+    /// Poll saved accounts through isolated Codex homes so every account can
+    /// stay fresh without replacing the credential active in Codex CLI.
+    private func pollSavedCodexProfilesIfStale() {
+        let activeAccountID = CodexProvider.identity(
+            at: ProfileStore.activeCredentialPath(.codex))?.accountID
+        for name in ProfileStore.listProfiles(.codex) {
+            let credential = ProfileStore.profileFile(.codex, name)
+            guard let identity = CodexProvider.identity(at: credential),
+                  identity.accountID != activeAccountID
+            else { continue }
+            let accountID = identity.accountID
+            let fresh = lastCodexProfilePoll[accountID].map {
+                -$0.timeIntervalSinceNow <= 60
+            } ?? false
+            guard !fresh, !codexProfilePollInFlight.contains(accountID) else { continue }
+
+            codexProfilePollInFlight.insert(accountID)
+            let home = credential.deletingLastPathComponent()
+            Task { @MainActor in
+                defer {
+                    codexProfilePollInFlight.remove(accountID)
+                    lastCodexProfilePoll[accountID] = Date()
+                }
+                do {
+                    let snapshot = try await CodexRateLimitClient.fetchSnapshot(
+                        codexHome: home)
+                    guard CodexProvider.identity(at: credential)?.accountID == accountID
+                    else { return }
+                    SnapshotCache.put(accountID: accountID, snapshot: snapshot)
+                    rebuildAccounts()
+                } catch {
+                    // Keep the account's last valid snapshot. An inactive
+                    // account failure must never poison the active meter.
+                }
             }
         }
     }

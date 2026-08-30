@@ -36,6 +36,17 @@ enum CodexRateLimitClientHarness {
                == ["app-server", "--listen", "stdio://"],
                "client should launch the stdio app-server transport")
 
+        let isolatedHome = URL(fileURLWithPath: "/tmp/codex-account-a")
+        let environment = CodexRateLimitClient.processEnvironment(
+            codexHome: isolatedHome,
+            base: ["PATH": "/usr/bin"])
+        expect(environment["CODEX_HOME"] == isolatedHome.path(),
+               "saved-account poll must receive isolated CODEX_HOME")
+        expect(environment["CODEX_SQLITE_HOME"] == isolatedHome.path(),
+               "saved-account poll state must remain in isolated home")
+        expect(environment["PATH"] == "/usr/bin",
+               "isolated polling must preserve the base environment")
+
         let requests = String(
             decoding: CodexRateLimitClient.requestPayload(), as: UTF8.self)
         let requestLines = requests.split(separator: "\n")

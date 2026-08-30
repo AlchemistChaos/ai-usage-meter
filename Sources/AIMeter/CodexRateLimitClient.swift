@@ -111,13 +111,15 @@ enum CodexRateLimitClient {
     }
 
     static func fetchSnapshot(
-        timeout: TimeInterval = 10
+        timeout: TimeInterval = 10,
+        codexHome: URL? = nil
     ) async throws -> CodexProvider.Snapshot {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 do {
                     continuation.resume(
-                        returning: try fetchSnapshotBlocking(timeout: timeout))
+                        returning: try fetchSnapshotBlocking(
+                            timeout: timeout, codexHome: codexHome))
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -126,7 +128,8 @@ enum CodexRateLimitClient {
     }
 
     private static func fetchSnapshotBlocking(
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        codexHome: URL?
     ) throws -> CodexProvider.Snapshot {
         guard let executable = CodexLogin.executableURL() else {
             throw CodexLogin.LoginError.executableNotFound
@@ -138,6 +141,7 @@ enum CodexRateLimitClient {
         let errors = Pipe()
         process.executableURL = executable
         process.arguments = appServerArguments
+        process.environment = processEnvironment(codexHome: codexHome)
         process.standardInput = input
         process.standardOutput = output
         process.standardError = errors
@@ -205,6 +209,17 @@ enum CodexRateLimitClient {
                 }
             }
         }
+    }
+
+    static func processEnvironment(
+        codexHome: URL?,
+        base: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        guard let codexHome else { return base }
+        var environment = base
+        environment["CODEX_HOME"] = codexHome.path()
+        environment["CODEX_SQLITE_HOME"] = codexHome.path()
+        return environment
     }
 
     private static func label(for minutes: Int) -> String {
