@@ -364,18 +364,53 @@ enum ClaudeProvider {
         return result as? Data
     }
 
-    /// Read a stored profile's token WITHOUT refreshing it.
-    ///
-    /// The meter borrows Claude Code's OAuth credentials. Redeeming a refresh
-    /// token rotates it server-side, which invalidates every other holder of
-    /// that chain — including the live Claude Code CLI session, which then
-    /// reports "sign in expired". So this path is deliberately read-only: an
-    /// expired token surfaces as an auth failure and the account reads as
-    /// stale until Claude Code refreshes it itself.
-    static func usableToken(for name: String) throws -> ProfileToken {
+    /// Refresh only credentials created by AI Meter's independent OAuth flow.
+    /// Legacy credentials may share Claude Code's refresh-token chain and stay
+    /// strictly read-only.
+    static func usableToken(for name: String) async throws -> ProfileToken {
         guard let tok = profileToken(name) else { throw CCError.missingProfile(name) }
-        guard !tok.isExpired else { throw URLError(.userAuthenticationRequired) }
-        return tok
+        guard tok.isExpired else { return tok }
+        guard let record = ClaudeProfileStore.record(accountUUID: name),
+              record.origin == .appOAuth
+        else { throw URLError(.userAuthenticationRequired) }
+
+        let existing = ClaudeOAuth.TokenSet(
+            accessToken: tok.accessToken,
+            refreshToken: tok.refreshToken,
+            expiresAt: tok.expiresAt ?? .distantPast,
+            scopes: profileScopes(name),
+            subscriptionType: nil)
+        let refreshed = try await ClaudeOAuth.refresh(tokens: existing)
+        guard var object = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: record.credentialURL)) as? [String: Any]
+        else { throw CocoaError(.fileReadCorruptFile) }
+        var oauth = object["claudeAiOauth"] as? [String: Any] ?? [:]
+        oauth["accessToken"] = refreshed.accessToken
+        oauth["refreshToken"] = refreshed.refreshToken ?? ""
+        oauth["expiresAt"] = refreshed.expiresAt.timeIntervalSince1970 * 1_000
+        oauth["scopes"] = refreshed.scopes
+        object["claudeAiOauth"] = oauth
+        let data = try JSONSerialization.data(withJSONObject: object)
+        try ClaudeProfileStore.saveCredential(
+            data,
+            identity: record.identity,
+            origin: .appOAuth)
+        guard let persisted = profileToken(name) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return persisted
+    }
+
+    private static func profileScopes(_ name: String) -> [String] {
+        guard let data = try? Data(contentsOf: profileFile(name)),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let oauth = object["claudeAiOauth"] as? [String: Any]
+        else { return [] }
+        if let scopes = oauth["scopes"] as? [String] { return scopes }
+        if let scope = oauth["scope"] as? String {
+            return scope.components(separatedBy: " ")
+        }
+        return []
     }
 
     // MARK: - Probe (diagnostics)

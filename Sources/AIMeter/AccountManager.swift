@@ -333,7 +333,7 @@ final class AccountManager: ObservableObject {
                 let profileUUID = ClaudeProvider.profileToken(name)?.accountUuid
                 if let profileUUID, polled.contains(profileUUID) { continue }
                 do {
-                    let tok = try ClaudeProvider.usableToken(for: name)
+                    let tok = try await ClaudeProvider.usableToken(for: name)
                     if let uuid = tok.accountUuid {
                         claudeProfileErrorsByUUID[uuid] = nil
                     }
