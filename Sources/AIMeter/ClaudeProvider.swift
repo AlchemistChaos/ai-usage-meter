@@ -253,17 +253,14 @@ enum ClaudeProvider {
 
     // MARK: - Profiles
 
-    static func profilesDir() -> URL { ProfileStore.profilesDir(.claude) }
+    static func profilesDir() -> URL { ClaudeProfileStore.profilesDirectory() }
 
     static func profileFile(_ name: String) -> URL {
-        profilesDir().appending(path: name).appending(path: "credentials.json")
+        ClaudeProfileStore.credentialURL(accountUUID: name)
     }
 
     static func listProfiles() -> [String] {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: profilesDir().path())) ?? []
-        return names.filter { !$0.hasPrefix(".") }
-            .filter { FileManager.default.fileExists(atPath: profileFile($0).path()) }
-            .sorted()
+        ClaudeProfileStore.list().map(\.identity.accountUUID)
     }
 
     struct StoredProfile {
@@ -274,15 +271,13 @@ enum ClaudeProvider {
     }
 
     static func storedProfile(_ name: String) -> StoredProfile {
-        guard let data = try? Data(contentsOf: profileFile(name)),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let id = obj["_ccmanagerIdentity"] as? [String: String]
+        guard let record = ClaudeProfileStore.record(accountUUID: name)
         else { return StoredProfile(name: name, accountUuid: nil, email: nil, plan: nil) }
         return StoredProfile(
             name: name,
-            accountUuid: id["accountUuid"],
-            email: id["email"].flatMap { $0.isEmpty ? nil : $0 },
-            plan: id["plan"].flatMap { $0.isEmpty ? nil : $0 })
+            accountUuid: record.identity.accountUUID,
+            email: record.identity.email,
+            plan: record.identity.plan)
     }
 
     // MARK: - Per-profile tokens (multi-account polling)

@@ -207,7 +207,7 @@ enum ClaudeOAuth {
     }
 
     /// Save a fresh login as a stored profile (same shape as imported ones).
-    static func saveProfile(name: String, tokens: TokenSet, profile: Profile) throws {
+    static func saveProfile(tokens: TokenSet, profile: Profile) throws {
         let obj: [String: Any] = [
             "claudeAiOauth": [
                 "accessToken": tokens.accessToken,
@@ -222,13 +222,14 @@ enum ClaudeOAuth {
                 "plan": profile.plan ?? "",
             ],
         ]
-        let dest = ClaudeProvider.profileFile(name)
-        try FileManager.default.createDirectory(
-            at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
         let out = try JSONSerialization.data(withJSONObject: obj)
-        try out.write(to: dest, options: .atomic)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600], ofItemAtPath: dest.path())
+        try ClaudeProfileStore.saveCredential(
+            out,
+            identity: .init(
+                accountUUID: profile.accountUuid,
+                email: profile.email,
+                plan: profile.plan),
+            origin: .appOAuth)
     }
 
     private static func randomURLSafe(_ bytes: Int) -> String {

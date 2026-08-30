@@ -24,6 +24,7 @@ final class AccountManager: ObservableObject {
     private var claudeProfileErrorsByUUID: [String: String] = [:]
     init() {
         try? ProfileStore.ensureDirs()
+        try? ClaudeProfileStore.migrateLegacyProfiles()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refresh() }
@@ -439,10 +440,8 @@ final class AccountManager: ObservableObject {
                 let profile = try await ClaudeOAuth.fetchProfile(token: tokens.accessToken)
                 logClaudeLogin(
                     "profile ok email=\(profile.email ?? "unknown") uuid=\(profile.accountUuid)")
-                let name = profile.email?.split(separator: "@").first.map(String.init)
-                    ?? String(profile.accountUuid.prefix(8))
-                try ClaudeOAuth.saveProfile(name: name, tokens: tokens, profile: profile)
-                logClaudeLogin("save ok profile=\(name)")
+                try ClaudeOAuth.saveProfile(tokens: tokens, profile: profile)
+                logClaudeLogin("save ok profile=\(profile.accountUuid.prefix(8))")
                 pendingClaudeLogin = nil
                 callbackServer?.stop()
                 callbackServer = nil
