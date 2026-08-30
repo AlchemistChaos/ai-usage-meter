@@ -24,12 +24,14 @@ final class AccountManager: ObservableObject {
     private var claudePollInFlight = false
     private var claudeUsageError: String?
     private var claudeProfileErrorsByUUID: [String: String] = [:]
-    init() {
+    init(startPolling: Bool = true) {
         try? ProfileStore.ensureDirs()
         try? ClaudeProfileStore.migrateLegacyProfiles()
-        refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.refresh() }
+        if startPolling {
+            refresh()
+            timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.refresh() }
+            }
         }
     }
 

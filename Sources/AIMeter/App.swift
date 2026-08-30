@@ -59,7 +59,7 @@ enum AIMeterApp {
         if CommandLine.arguments.contains("--status-item-selftest") {
             let application = NSApplication.shared
             application.setActivationPolicy(.accessory)
-            let controller = StatusItemController(manager: AccountManager.shared)
+            let controller = StatusItemController(manager: AccountManager(startPolling: false))
             controller.ensureStatusItem()
             DispatchQueue.main.async {
                 controller.runInteractionSelfTest { passed in

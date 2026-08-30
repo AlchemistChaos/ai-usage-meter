@@ -191,7 +191,8 @@ enum ClaudeProviderHarness {
             ])
         let merged = ClaudeProvider.mergeStatuslineSnapshot(
             statuslineSnapshot!,
-            preservingModelWindowsFrom: cachedFable)
+            preservingModelWindowsFrom: cachedFable,
+            now: capturedAt)
         expect(
             merged.windows.map(\.label) == ["5h", "Weekly", "Fable wk"],
             "statusline refresh should preserve cached model-scoped Claude windows")
@@ -204,7 +205,8 @@ enum ClaudeProviderHarness {
 
         let mergedFable = ClaudeProvider.mergeStatuslineSnapshot(
             fableStatuslineSnapshot!,
-            preservingModelWindowsFrom: cachedFable)
+            preservingModelWindowsFrom: cachedFable,
+            now: capturedAt)
         expect(
             mergedFable.windows.filter { $0.label == "Fable wk" }.count == 1,
             "fresh Fable statusline usage should replace cached Fable instead of duplicating it")
