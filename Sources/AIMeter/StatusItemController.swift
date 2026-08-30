@@ -9,6 +9,7 @@ extension NSStatusItem: StatusItemRepresenting {
 @MainActor
 final class StatusItemController: NSObject, NSPopoverDelegate {
     private let manager: AccountManager
+    private let usesAutosaveName: Bool
     private let popover = NSPopover()
     private var cancellables = Set<AnyCancellable>()
     private var preferencesObserver: NSObjectProtocol?
@@ -17,12 +18,15 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private lazy var lifecycle = StatusItemLifecycle<NSStatusItem> {
         let item = NSStatusBar.system.statusItem(
             withLength: NSStatusItem.variableLength)
-        item.autosaveName = "com.alchemistchaos.aimeter.status-item"
+        if self.usesAutosaveName {
+            item.autosaveName = "com.alchemistchaos.aimeter.status-item"
+        }
         return item
     }
 
-    init(manager: AccountManager) {
+    init(manager: AccountManager, usesAutosaveName: Bool = true) {
         self.manager = manager
+        self.usesAutosaveName = usesAutosaveName
         super.init()
 
         popover.behavior = .transient
