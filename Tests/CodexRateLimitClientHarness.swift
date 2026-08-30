@@ -24,6 +24,15 @@ private func expectThrows(
 @main
 enum CodexRateLimitClientHarness {
     static func main() async throws {
+        if let index = CommandLine.arguments.firstIndex(of: "--home"),
+           index + 1 < CommandLine.arguments.count {
+            let snapshot = try await CodexRateLimitClient.fetchSnapshot(
+                codexHome: URL(fileURLWithPath: CommandLine.arguments[index + 1]))
+            for window in snapshot.windows {
+                print("ISOLATED: \(window.label) \(window.usedPercent)% used")
+            }
+            return
+        }
         if CommandLine.arguments.contains("--live") {
             let snapshot = try await CodexRateLimitClient.fetchSnapshot()
             for window in snapshot.windows {

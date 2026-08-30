@@ -18,6 +18,7 @@ final class AccountManager: ObservableObject {
     private var codexPollInFlightAccountID: String?
     private var codexProfilePollInFlight = Set<String>()
     private var lastCodexProfilePoll: [String: Date] = [:]
+    private var codexProfileErrorsByAccountID: [String: String] = [:]
     private var codexUsageError: String?
     /// Claude usage is a real network call — poll at most once a minute.
     private var lastClaudePoll: Date?
@@ -129,12 +130,17 @@ final class AccountManager: ObservableObject {
                 continue
             }
             let cached = SnapshotCache.get(accountID: id.accountID)
-            let status: DataStatus = cached.map {
-                codexDataStatus(
-                    cachedAt: $0.capturedAt,
-                    accountID: id.accountID,
-                    activeAccountID: activeAccountID)
-            } ?? .noData(reason: "no reading yet — switch to it and use Codex once")
+            let status: DataStatus
+            if let error = codexProfileErrorsByAccountID[id.accountID] {
+                status = .reconnectRequired(error, cachedAt: cached?.capturedAt)
+            } else {
+                status = cached.map {
+                    codexDataStatus(
+                        cachedAt: $0.capturedAt,
+                        accountID: id.accountID,
+                        activeAccountID: activeAccountID)
+                } ?? .noData(reason: "waiting for first live reading")
+            }
             result.append(Account(
                 provider: .codex,
                 profileName: name,
@@ -243,10 +249,12 @@ final class AccountManager: ObservableObject {
                     guard CodexProvider.identity(at: credential)?.accountID == accountID
                     else { return }
                     SnapshotCache.put(accountID: accountID, snapshot: snapshot)
+                    codexProfileErrorsByAccountID[accountID] = nil
                     rebuildAccounts()
                 } catch {
-                    // Keep the account's last valid snapshot. An inactive
-                    // account failure must never poison the active meter.
+                    codexProfileErrorsByAccountID[accountID] =
+                        "Codex login expired. Add this Codex account again to reconnect it."
+                    rebuildAccounts()
                 }
             }
         }
