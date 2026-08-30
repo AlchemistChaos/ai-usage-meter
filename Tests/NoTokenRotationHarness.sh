@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
-# The meter borrows Claude Code's OAuth credentials. Redeeming a refresh token
-# rotates it server-side and invalidates whatever else holds that chain — which
-# is the live Claude Code CLI session. So the Anthropic path must stay READ-ONLY:
-# read the token, use it, and if it is expired wait for the CLI to refresh it.
+# Claude Code's OAuth chain stays read-only. AI Meter may rotate only a token
+# created by its own independent browser authorization flow and explicitly
+# marked appOAuth.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 sources="Sources/AIMeter"
 
-if grep -RnE '"grant_type"[[:space:]]*:[[:space:]]*"refresh_token"' "$sources"; then
-  echo "FAIL: a refresh_token grant exists in $sources — this rotates Claude Code's" >&2
-  echo "      refresh token and evicts the live CLI session (see sites above)." >&2
+if grep -RnE '"grant_type"[[:space:]]*:[[:space:]]*"refresh_token"' \
+    "$sources" --exclude='ClaudeOAuth.swift'; then
+  echo "FAIL: refresh_token grants must be isolated to ClaudeOAuth.swift" >&2
   exit 1
 fi
 
-if grep -RnE 'func freshToken\(for' "$sources"; then
-  echo "FAIL: ClaudeProvider.freshToken(for:) still exists — it is the rotation path" >&2
+grep -q 'record.origin == .appOAuth' "$sources/ClaudeProvider.swift" || {
+  echo "FAIL: stored Claude refresh is not guarded by appOAuth provenance" >&2
   exit 1
-fi
+}
+
+grep -q 'static func freshClaudeCodeToken' "$sources/ClaudeProvider.swift" || {
+  echo "FAIL: Claude Code's active read-only token path disappeared" >&2
+  exit 1
+}
 
 # Guard against over-deletion: the login flow legitimately exchanges an auth code.
 grep -qRE '"grant_type"[[:space:]]*:[[:space:]]*"authorization_code"' "$sources/ClaudeOAuth.swift" || {
@@ -44,4 +48,4 @@ grep -q 'Claude switching is off' "$sources/AccountManager.swift" || {
   exit 1
 }
 
-echo "PASS: Claude path is read-only (no rotation, no import, no activate)"
+echo "PASS: Claude Code path is read-only; only app-owned profiles rotate"

@@ -12,11 +12,8 @@ for file in "$provider" "$oauth"; do
   fi
 done
 
-# NOTE: ClaudeProvider deliberately no longer refreshes tokens at all. It borrows
-# Claude Code's credentials, and redeeming a refresh token rotates it server-side,
-# evicting the live CLI session. See Tests/NoTokenRotationHarness.sh, which asserts
-# the absence of that path. Only the login flow (ClaudeOAuth) talks to the token
-# endpoint now, exchanging an authorization_code.
+# ClaudeProvider may refresh only profiles explicitly marked appOAuth. The
+# active Claude Code credential remains read-only; see NoTokenRotationHarness.
 
 rg -q 'https://api\.anthropic\.com/v1/oauth/token' "$oauth" || {
   echo "FAIL: ClaudeOAuth does not exchange login codes through api.anthropic.com" >&2
