@@ -347,11 +347,24 @@ final class AccountManager: ObservableObject {
             var activeClaudeCodeFailure: String?
 
             if let activeUUID {
+                let activeProfileName = profiles.first {
+                    ClaudeProvider.storedProfile($0).accountUuid == activeUUID
+                }
                 if let snapshot = ClaudeProvider.latestStatuslineSnapshot() {
-                    let merged = ClaudeProvider.mergeStatuslineSnapshot(
+                    var merged = ClaudeProvider.mergeStatuslineSnapshot(
                         snapshot,
                         preservingModelWindowsFrom: SnapshotCache.get(
                             accountID: "claude:\(activeUUID)"))
+                    do {
+                        let windows = try await fetchActiveClaudeUsageWindows(
+                            activeProfileName: activeProfileName)
+                        merged = ClaudeProvider.mergeUsageEndpointWindows(
+                            windows,
+                            into: merged)
+                    } catch {
+                        failures.append(
+                            "Claude Code scoped usage: \(error.localizedDescription)")
+                    }
                     SnapshotCache.put(
                         accountID: "claude:\(activeUUID)",
                         snapshot: merged)
@@ -359,17 +372,16 @@ final class AccountManager: ObservableObject {
                     polled.insert(activeUUID)
                 } else {
                     do {
-                    let tok = try ClaudeProvider.freshClaudeCodeToken()
-                    let windows = try await ClaudeProvider.fetchUsage(
-                        token: tok.accessToken)
-                    SnapshotCache.put(
-                        accountID: "claude:\(activeUUID)",
-                        snapshot: .init(
-                            windows: windows,
-                            plan: nil,
-                            capturedAt: Date()))
-                    claudeProfileErrorsByUUID[activeUUID] = nil
-                    polled.insert(activeUUID)
+                        let windows = try await fetchActiveClaudeUsageWindows(
+                            activeProfileName: activeProfileName)
+                        SnapshotCache.put(
+                            accountID: "claude:\(activeUUID)",
+                            snapshot: .init(
+                                windows: windows,
+                                plan: nil,
+                                capturedAt: Date()))
+                        claudeProfileErrorsByUUID[activeUUID] = nil
+                        polled.insert(activeUUID)
                     } catch {
                         activeClaudeCodeFailure = ClaudeProvider.reconnectAccountMessage
                         // Drive claudeAccount()'s suppression too, otherwise the card
@@ -419,6 +431,17 @@ final class AccountManager: ObservableObject {
             publishUsageErrors()
             rebuildAccounts()
         }
+    }
+
+    private func fetchActiveClaudeUsageWindows(
+        activeProfileName: String?
+    ) async throws -> [UsageWindow] {
+        if let activeProfileName {
+            let tok = try await ClaudeProvider.usableToken(for: activeProfileName)
+            return try await ClaudeProvider.fetchUsage(token: tok.accessToken)
+        }
+        let tok = try ClaudeProvider.freshClaudeCodeToken()
+        return try await ClaudeProvider.fetchUsage(token: tok.accessToken)
     }
 
     private func publishUsageErrors() {

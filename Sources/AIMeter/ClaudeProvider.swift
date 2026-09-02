@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 /// Claude Code support: the active account can use Claude Code's current
@@ -156,11 +157,6 @@ enum ClaudeProvider {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let rateLimits = obj["rate_limits"] as? [String: Any]
         else { return nil }
-        let model = obj["model"] as? [String: Any]
-        let modelID = (model?["id"] as? String)?.lowercased() ?? ""
-        let modelName = (model?["display_name"] as? String)?.lowercased() ?? ""
-        let isFable = modelID.contains("fable") || modelName.contains("fable")
-
         func doubleValue(_ value: Any?) -> Double? {
             if let value = value as? Double { return value }
             if let value = value as? Int { return Double(value) }
@@ -203,10 +199,7 @@ enum ClaudeProvider {
 
         let windows = [
             window("five_hour", label: "5h", minutes: 300),
-            window(
-                "seven_day",
-                label: isFable ? "Fable wk" : "Weekly",
-                minutes: 10_080),
+            window("seven_day", label: "Weekly", minutes: 10_080),
         ].compactMap { $0 }
         guard !windows.isEmpty else { return nil }
         return .init(windows: windows, plan: nil, capturedAt: capturedAt)
@@ -226,6 +219,29 @@ enum ClaudeProvider {
             windows: statusline.windows + preserved,
             plan: statusline.plan ?? cached?.plan,
             capturedAt: statusline.capturedAt)
+    }
+
+    static func mergeUsageEndpointWindows(
+        _ endpointWindows: [UsageWindow],
+        into snapshot: CodexProvider.Snapshot,
+        capturedAt: Date = Date()
+    ) -> CodexProvider.Snapshot {
+        var endpointByLabel: [String: UsageWindow] = [:]
+        for window in endpointWindows {
+            endpointByLabel[window.label] = window
+        }
+
+        let snapshotLabels = Set(snapshot.windows.map(\.label))
+        let merged = snapshot.windows.map { window in
+            endpointByLabel[window.label] ?? window
+        } + endpointWindows.filter {
+            !snapshotLabels.contains($0.label)
+        }
+
+        return .init(
+            windows: merged,
+            plan: snapshot.plan,
+            capturedAt: capturedAt)
     }
 
     static func isAuthenticationFailure(_ error: Error) -> Bool {
@@ -352,11 +368,14 @@ enum ClaudeProvider {
     }
 
     private static func claudeCodeKeychainData() -> Data? {
+        let context = LAContext()
+        context.interactionNotAllowed = true
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: claudeCodeKeychainService,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseAuthenticationContext as String: context,
         ]
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)

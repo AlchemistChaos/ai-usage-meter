@@ -165,8 +165,8 @@ enum ClaudeProviderHarness {
             data: Data(fableStatusline.utf8),
             capturedAt: capturedAt)
         expect(
-            fableStatuslineSnapshot?.windows.map(\.label) == ["5h", "Fable wk"],
-            "Fable statuslines should label seven_day as Fable weekly usage")
+            fableStatuslineSnapshot?.windows.map(\.label) == ["5h", "Weekly"],
+            "statusline seven_day should remain all-models weekly usage")
 
         let cachedFable = CachedSnapshot(
             accountID: "claude:active",
@@ -209,13 +209,40 @@ enum ClaudeProviderHarness {
             now: capturedAt)
         expect(
             mergedFable.windows.filter { $0.label == "Fable wk" }.count == 1,
-            "fresh Fable statusline usage should replace cached Fable instead of duplicating it")
+            "Fable statusline usage should not duplicate cached scoped Fable")
         expect(
-            mergedFable.windows.first(where: { $0.label == "Weekly" })?.usedPercent == 27,
-            "Fable statusline refresh should preserve cached generic Weekly usage")
+            mergedFable.windows.first(where: { $0.label == "Weekly" })?.usedPercent == 48,
+            "Fable statusline refresh should update generic Weekly usage")
         expect(
-            mergedFable.windows.first(where: { $0.label == "Fable wk" })?.usedPercent == 48,
-            "fresh Fable statusline usage should win over cached Fable")
+            mergedFable.windows.first(where: { $0.label == "Fable wk" })?.usedPercent == 57,
+            "statusline refresh should preserve cached scoped Fable usage")
+
+        let usageEndpointWindows = [
+            UsageWindow(
+                label: "5h",
+                usedPercent: 51,
+                windowMinutes: 300,
+                resetsAt: capturedAt.addingTimeInterval(2 * 60 * 60)),
+            UsageWindow(
+                label: "Weekly",
+                usedPercent: 58,
+                windowMinutes: 10_080,
+                resetsAt: capturedAt.addingTimeInterval(4 * 60 * 60)),
+            UsageWindow(
+                label: "Fable wk",
+                usedPercent: 89,
+                windowMinutes: 10_080,
+                resetsAt: capturedAt.addingTimeInterval(4 * 60 * 60)),
+        ]
+        let mergedLiveUsage = ClaudeProvider.mergeUsageEndpointWindows(
+            usageEndpointWindows,
+            into: fableStatuslineSnapshot!)
+        expect(
+            mergedLiveUsage.windows.map(\.label) == ["5h", "Weekly", "Fable wk"],
+            "live usage endpoint merge should retain standard and scoped windows")
+        expect(
+            mergedLiveUsage.windows.first(where: { $0.label == "Fable wk" })?.usedPercent == 89,
+            "live usage endpoint should replace stale scoped Fable usage")
 
         print("PASS: Claude provider usage parsing")
     }

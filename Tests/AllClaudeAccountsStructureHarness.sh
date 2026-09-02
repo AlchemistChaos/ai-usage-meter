@@ -26,4 +26,19 @@ rg -q 'polled\.contains\(profileUUID\)' "$manager" || {
   exit 1
 }
 
+rg -q 'activeProfileName' "$manager" || {
+  echo "FAIL: statusline polling cannot fall back to the active saved Claude profile" >&2
+  exit 1
+}
+
+rg -Uq 'fetchActiveClaudeUsageWindows\(\s*\n\s*activeProfileName: activeProfileName\)' "$manager" || {
+  echo "FAIL: active Claude polling does not use the non-prompting token helper" >&2
+  exit 1
+}
+
+rg -q 'ClaudeProvider\.usableToken\(for: activeProfileName\)' "$manager" || {
+  echo "FAIL: active saved Claude profile is not used to refresh scoped usage" >&2
+  exit 1
+}
+
 echo "PASS: all saved Claude accounts are UUID-keyed, polled, and deduplicated"

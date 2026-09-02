@@ -23,6 +23,16 @@ grep -q 'static func freshClaudeCodeToken' "$sources/ClaudeProvider.swift" || {
   exit 1
 }
 
+grep -q 'LAContext()' "$sources/ClaudeProvider.swift" || {
+  echo "FAIL: Claude Code keychain reads do not create a non-interactive auth context" >&2
+  exit 1
+}
+
+grep -q 'interactionNotAllowed = true' "$sources/ClaudeProvider.swift" || {
+  echo "FAIL: background Claude Code keychain reads may trigger permission prompts" >&2
+  exit 1
+}
+
 # Guard against over-deletion: the login flow legitimately exchanges an auth code.
 grep -qRE '"grant_type"[[:space:]]*:[[:space:]]*"authorization_code"' "$sources/ClaudeOAuth.swift" || {
   echo "FAIL: ClaudeOAuth lost its authorization_code exchange — login is broken" >&2
