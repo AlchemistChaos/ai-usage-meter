@@ -61,6 +61,14 @@ rg -q 'private var statusItemController: StatusItemController\?' "$app" || {
   echo "FAIL: app delegate does not retain the status item controller" >&2
   exit 1
 }
+rg -q 'private var agentProcess: Process\?' "$app" || {
+  echo "FAIL: bundled host does not retain the raw menu agent" >&2
+  exit 1
+}
+rg -Uq 'applicationShouldHandleReopen[^{]*\{[^}]*ensureAgent\(' "$app" || {
+  echo "FAIL: reopening the bundled host does not recover the raw menu agent" >&2
+  exit 1
+}
 rg -Uq 'applicationDidFinishLaunching[^{]*\{[^}]*ensureStatusItem\(\)' "$app" || {
   echo "FAIL: launch does not ensure the gauge" >&2
   exit 1

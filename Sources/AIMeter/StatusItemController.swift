@@ -42,7 +42,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
         preferencesObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
-            object: UserDefaults.standard,
+            object: AppPreferences.store,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in _ = self?.updateStatusItem() }
@@ -60,6 +60,12 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
     func ensureStatusItem() {
         updateStatusItem()
+    }
+
+    func showPopover() {
+        let item = updateStatusItem()
+        guard !popover.isShown, let button = item.button else { return }
+        togglePopover(button)
     }
 
     @discardableResult
@@ -160,10 +166,10 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func preference(_ key: String, fallback: Bool) -> Bool {
-        guard UserDefaults.standard.object(forKey: key) != nil else {
+        guard AppPreferences.store.object(forKey: key) != nil else {
             return fallback
         }
-        return UserDefaults.standard.bool(forKey: key)
+        return AppPreferences.store.bool(forKey: key)
     }
 
     @objc private func togglePopover(_ sender: NSStatusBarButton) {

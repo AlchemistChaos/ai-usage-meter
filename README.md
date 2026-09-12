@@ -90,6 +90,10 @@ swiftc -parse-as-library Sources/AIMeter/StatusItemLifecycle.swift \
   Tests/StatusItemLifecycleHarness.swift \
   -o /tmp/notch-limits-status-item-tests
 /tmp/notch-limits-status-item-tests
+swiftc Sources/AIMeter/MenuAgentLauncher.swift \
+  Tests/MenuAgentLauncherHarness.swift \
+  -o /tmp/notch-limits-menu-agent-tests
+/tmp/notch-limits-menu-agent-tests
 swiftc -parse-as-library Sources/AIMeter/PopoverPlacement.swift \
   Tests/PopoverPlacementHarness.swift \
   -o /tmp/notch-limits-popover-placement-tests
@@ -149,7 +153,8 @@ swiftc -parse-as-library Sources/AIMeter/Models.swift \
 
 | File | Responsibility |
 |---|---|
-| `App.swift` / `StatusItemController.swift` | App lifecycle, retained menu-bar gauge, and dashboard popover |
+| `App.swift` / `MenuAgentLauncher.swift` / `StatusItemController.swift` | App lifecycle, macOS 26 menu-agent relay, retained gauge, and dashboard popover |
+| `AppPreferences.swift` / `LaunchAtLoginBridge.swift` | Shared menu preferences and bundled launch-at-login commands |
 | `StatusItemLifecycle.swift` | Idempotent creation and visibility recovery for the gauge |
 | `PopoverPlacement.swift` | Keeps the dashboard below the menu bar as its content resizes |
 | `GlassDashboardView.swift` | Provider-first dashboard |

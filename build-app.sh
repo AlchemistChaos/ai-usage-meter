@@ -6,13 +6,15 @@ cd "$(dirname "$0")"
 CONFIG="${1:-release}"
 APP="AI Meter.app"
 EXECUTABLE="AIMeter"
+HELPER="AIMeterMenuAgent"
 
 swift build -c "$CONFIG"
 BIN=".build/$CONFIG/$EXECUTABLE"
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Helpers"
 cp "$BIN" "$APP/Contents/MacOS/$EXECUTABLE"
+cp "$BIN" "$APP/Contents/Helpers/$HELPER"
 cp "Assets/AIMeter.icns" "$APP/Contents/Resources/AIMeter.icns"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
@@ -41,11 +43,17 @@ PLIST
 #   export AIMETER_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 IDENTITY="${AIMETER_SIGN_IDENTITY:-}"
 if [[ -n "$IDENTITY" ]] && security find-identity -v -p codesigning | grep -qF "$IDENTITY"; then
+  codesign --force --options runtime --timestamp --sign "$IDENTITY" \
+    --identifier com.alchemistchaos.aimeter \
+    "$APP/Contents/Helpers/$HELPER"
   codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
   echo "signed: $(codesign -dv "$APP" 2>&1 | grep TeamIdentifier)"
 else
   [[ -n "$IDENTITY" ]] && echo "note: AIMETER_SIGN_IDENTITY not found in keychain; using ad-hoc"
-  codesign --force --deep --sign - "$APP" 2>/dev/null || \
+  codesign --force --sign - --identifier com.alchemistchaos.aimeter \
+    "$APP/Contents/Helpers/$HELPER" 2>/dev/null || \
+    echo "note: ad-hoc helper codesign failed; helper may not launch"
+  codesign --force --sign - "$APP" 2>/dev/null || \
     echo "note: ad-hoc codesign failed; app will still run locally"
 fi
 
@@ -54,7 +62,15 @@ echo "Built $APP"
 # --install: put it in /Applications and (re)launch — the stable home macOS
 # expects for permission grants and launch-at-login.
 if [[ "${2:-}" == "--install" || "${1:-}" == "--install" ]]; then
-  pkill -x AIMeter 2>/dev/null || true
+  pkill -TERM -x AIMeter 2>/dev/null || true
+  for _ in {1..50}; do
+    pgrep -x AIMeter >/dev/null || break
+    sleep 0.1
+  done
+  if pgrep -x AIMeter >/dev/null; then
+    echo "error: existing AI Meter processes did not terminate" >&2
+    exit 1
+  fi
   rm -rf "/Applications/$APP"
   cp -R "$APP" /Applications/
   open "/Applications/$APP"

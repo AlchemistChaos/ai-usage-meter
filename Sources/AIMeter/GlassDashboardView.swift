@@ -1,4 +1,3 @@
-import ServiceManagement
 import SwiftUI
 
 private struct DashboardContentHeightKey: PreferenceKey {
@@ -13,13 +12,13 @@ struct GlassDashboardView: View {
     @ObservedObject var manager: AccountManager
     @State private var contentHeight: CGFloat = 360
     @State private var blurEmails = false
-    @AppStorage(MenuBarPreferenceKey.claudeFiveHour)
+    @AppStorage(MenuBarPreferenceKey.claudeFiveHour, store: AppPreferences.store)
     private var showsClaudeFiveHour = MenuBarSelection.standard.showsClaudeFiveHour
-    @AppStorage(MenuBarPreferenceKey.claudeWeekly)
+    @AppStorage(MenuBarPreferenceKey.claudeWeekly, store: AppPreferences.store)
     private var showsClaudeWeekly = MenuBarSelection.standard.showsClaudeWeekly
-    @AppStorage(MenuBarPreferenceKey.claudeFable)
+    @AppStorage(MenuBarPreferenceKey.claudeFable, store: AppPreferences.store)
     private var showsClaudeFable = MenuBarSelection.standard.showsClaudeFable
-    @AppStorage(MenuBarPreferenceKey.codexWeekly)
+    @AppStorage(MenuBarPreferenceKey.codexWeekly, store: AppPreferences.store)
     private var showsCodexWeekly = MenuBarSelection.standard.showsCodexWeekly
     private let maxDashboardHeight: CGFloat = 680
     private let columns = Array(
@@ -158,11 +157,10 @@ struct GlassDashboardView: View {
 
     private var launchAtLogin: Binding<Bool> {
         Binding(
-            get: { SMAppService.mainApp.status == .enabled },
+            get: { LaunchAtLoginBridge.isEnabled },
             set: { enabled in
                 do {
-                    if enabled { try SMAppService.mainApp.register() }
-                    else { try SMAppService.mainApp.unregister() }
+                    try LaunchAtLoginBridge.setEnabled(enabled)
                 } catch {
                     manager.lastError =
                         "Launch at login: \(error.localizedDescription)"
