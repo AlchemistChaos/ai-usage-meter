@@ -14,7 +14,7 @@ This is a redesigned fork of [everyai-com/notch-limits](https://github.com/every
 - Menu-bar A/C readout showing the active accounts' short-window capacity.
 - Add multiple Claude accounts through browser OAuth without changing the Claude CLI login.
 - Add multiple Codex accounts through an isolated official `codex login` flow without logging out or replacing the active Codex credential.
-- One-click Codex switching with automatic credential backups.
+- Each saved Codex account keeps its own login, so `codex logout` in the CLI can never end it.
 - Native macOS glass using a non-interactive `NSVisualEffectView`.
 
 ## Install from source
@@ -41,9 +41,9 @@ Choose **Add Anthropic account**, select a browser, and complete the OAuth flow 
 
 Choose **Add OpenAI Codex account** and sign in through the browser. AI Meter launches the installed official Codex CLI with a temporary isolated `CODEX_HOME`, forces file-based credential storage there, imports the completed login, and removes the temporary directory. Your active `~/.codex/auth.json` is not changed.
 
-**Import OpenAI Codex login** remains available for saving whichever account is already active in the normal Codex CLI.
+There is no import-current or switch action. `codex logout` revokes the CLI's session server-side, so a saved copy of the CLI's login (or a CLI copy of a saved login) dies with it. Change the CLI account with `codex login`; re-add an expired account with **Add OpenAI Codex account**, which replaces its saved login in place.
 
-Every saved Codex profile is polled through its own isolated official Codex app-server state. Switching is optional and no longer required merely to refresh an inactive account's limits.
+Every saved Codex profile is polled through its own isolated official Codex app-server state.
 
 ## Privacy and network behavior
 
@@ -54,7 +54,6 @@ There is no telemetry, analytics, hosted backend, or project-owned server.
 - Codex limits come from the installed Codex client's `account/rateLimits/read` method. Saved accounts use isolated `CODEX_HOME` directories; rate-limit headers in `~/.codex/logs_2.sqlite` remain a last-known fallback.
 - The OAuth callback listener binds only to localhost.
 - Saved credentials live under `~/.ccmanager/profiles/` with owner-only `0600` permissions.
-- Codex switching backs up the active credential before replacing it and writes atomically.
 - The app does not read Claude transcripts or import token-event history.
 - The app does not send prompts, source code, filenames, or usage data to any server operated by this project.
 
@@ -105,6 +104,7 @@ bash Tests/ClaudeAuthStructureHarness.sh
 bash Tests/NoTokenRotationHarness.sh
 bash Tests/AllClaudeAccountsStructureHarness.sh
 bash Tests/StatuslineCaptureByAccountHarness.sh
+bash Tests/CodexIndependentProfilesHarness.sh
 swiftc -parse-as-library Sources/AIMeter/Models.swift \
   Sources/AIMeter/CodexProvider.swift \
   Sources/AIMeter/CodexLogin.swift \

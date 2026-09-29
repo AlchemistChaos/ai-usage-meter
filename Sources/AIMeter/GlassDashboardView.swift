@@ -121,10 +121,6 @@ struct GlassDashboardView: View {
                     }
                 }
 
-                Button("Import OpenAI Codex login") {
-                    manager.importCurrentCodex()
-                }
-
                 Divider()
 
                 Menu("Menu bar") {
@@ -196,11 +192,7 @@ private struct ProviderGlassSection: View {
 
                 LazyVGrid(columns: columns, spacing: 6) {
                     ForEach(group.inactive) { account in
-                        CompactAccountCard(account: account, blurEmails: blurEmails) {
-                            if account.provider == .codex {
-                                manager.switchTo(account)
-                            }
-                        }
+                        CompactAccountCard(account: account, blurEmails: blurEmails)
                     }
                 }
             }
@@ -366,7 +358,6 @@ private struct ActiveWindowRow: View {
 private struct CompactAccountCard: View {
     let account: Account
     let blurEmails: Bool
-    let onSwitch: () -> Void
     @State private var hovering = false
     @State private var showingResetDetails = false
 
@@ -384,15 +375,6 @@ private struct CompactAccountCard: View {
                     font: .system(size: 9, weight: .semibold))
                 Spacer(minLength: 2)
                 PlanBadge(plan: account.plan, compact: true)
-                if account.provider == .codex {
-                    Button(action: onSwitch) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 8, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .opacity(hovering ? 1 : 0.35)
-                    .help("Switch Codex to this account")
-                }
             }
 
             if let primary {
@@ -444,13 +426,6 @@ private struct CompactAccountCard: View {
         .onTapGesture { showingResetDetails.toggle() }
         .popover(isPresented: $showingResetDetails, arrowEdge: .bottom) {
             ResetDetailsPopover(account: account, blurEmails: blurEmails)
-        }
-        .contextMenu {
-            if account.provider == .codex {
-                Button("Make Default") {
-                    onSwitch()
-                }
-            }
         }
         .accessibilityAction(named: "Show reset times") {
             showingResetDetails = true

@@ -91,7 +91,7 @@ rg -q 'help\("Quit"\)' "$view" || {
   exit 1
 }
 rg -q 'Add Anthropic account' "$view" || exit 1
-rg -q 'Import OpenAI Codex login' "$view" || exit 1
+rg -q 'Add OpenAI Codex account' "$view" || exit 1
 rg -q 'Launch at login' "$view" || exit 1
 rg -Fq 'Menu("Menu bar")' "$view" || {
   echo "FAIL: menu bar preferences are missing from settings" >&2
@@ -127,18 +127,12 @@ rg -Fq 'let windows = AccountPresentation.detailWindows(for: account)' "$view" |
   echo "FAIL: inactive account detail should include every provider window" >&2
   exit 1
 }
-rg -Fq '.contextMenu' "$view" || {
-  echo "FAIL: compact account cards need a context menu" >&2
+# Importing or switching would share one Codex login between AI Meter and the
+# CLI, and `codex logout` revokes it server-side (see CodexIndependentProfilesHarness).
+if rg -q 'Import OpenAI Codex login|Make Default|Switch Codex to this account' "$view"; then
+  echo "FAIL: the dashboard still offers importing or switching a shared Codex login" >&2
   exit 1
-}
-rg -q 'Make Default' "$view" || {
-  echo "FAIL: compact Codex accounts should offer a right-click Make Default action" >&2
-  exit 1
-}
-rg -Uq 'if account\.provider == \.codex \{\n\s+Button\("Make Default"\)' "$view" || {
-  echo "FAIL: Make Default should only be offered for Codex account switching" >&2
-  exit 1
-}
+fi
 if rg -q 'TokenSummaryRow|UsageHistoryView|Button\("History"\)' "$view"; then
   echo "FAIL: token analytics UI is still present" >&2
   exit 1

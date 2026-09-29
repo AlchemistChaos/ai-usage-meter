@@ -56,14 +56,11 @@ if grep -RnE 'importActive\(\.claude|importCredential\(\s*\.claude|activate\(\.c
   exit 1
 fi
 
-grep -q 'case .claude: break' "$sources/AccountManager.swift" || {
-  echo "FAIL: importCurrent lost its Claude guard — Claude creds could be imported" >&2
+# Stronger than a per-provider guard: no import-current or switch path exists
+# at all, so no profile can share a login (or keychain entry) with a CLI.
+if grep -qE 'func importCurrent|func switchTo|ProfileStore\.(importActive|activate)\(' "$sources/AccountManager.swift"; then
+  echo "FAIL: an import-current or switch path exists — it would share a login with the CLI" >&2
   exit 1
-}
-
-grep -q 'Claude switching is off' "$sources/AccountManager.swift" || {
-  echo "FAIL: switchTo lost its Claude guard — a profile could overwrite the CLI keychain" >&2
-  exit 1
-}
+fi
 
 echo "PASS: Claude Code path is read-only; only app-owned profiles rotate"

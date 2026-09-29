@@ -93,10 +93,6 @@ final class AccountManager: ObservableObject {
             CodexProvider.accountIdentity(
                 at: ProfileStore.profileFile(.codex, name)) == activeAccountID
         }
-        if let activeProfileName,
-           liveIdentity?.accountID == activeAccountID {
-            _ = try? ProfileStore.importActive(.codex, as: activeProfileName)
-        }
 
         // Someone may be logged in without having imported that account yet.
         if activeProfileName == nil, let activeAccountID {
@@ -685,46 +681,8 @@ final class AccountManager: ObservableObject {
             .max { ($0.headroom ?? 0) < ($1.headroom ?? 0) }
     }
 
-    /// Import whatever Codex account is currently logged in, naming the profile
-    /// after its email automatically — no reason to make anyone type a name we
-    /// can already read out of the token.
-    func importCurrentCodex() {
-        guard let id = CodexProvider.identity(at: ProfileStore.activeCredentialPath(.codex)) else {
-            lastError = "No Codex login found — run `codex login` first"
-            return
-        }
-        let name = AccountPresentation.codexProfileName(
-            email: id.email,
-            accountID: id.accountID,
-            existingAccountIDsByName: existingCodexIdentities())
-        importCurrent(.codex, as: name)
-    }
-
-    func importCurrent(_ provider: ProviderKind, as name: String) {
-        do {
-            switch provider {
-            case .codex: try ProfileStore.importActive(provider, as: name)
-            case .claude: break  // Claude accounts are added via the login flow
-            }
-            lastError = nil
-            refresh()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
-
-    func switchTo(_ account: Account) {
-        do {
-            switch account.provider {
-            case .codex: try ProfileStore.activate(.codex, name: account.profileName)
-            case .claude:
-                lastError = "Claude switching is off — the app never writes your keychain. Use `claude` to change accounts."
-                return
-            }
-            lastError = nil
-            refresh()
-        } catch {
-            lastError = error.localizedDescription
-        }
-    }
+    // No import-current or switch actions: both would share one login between
+    // AI Meter and a CLI, and `codex logout` revokes that login server-side.
+    // Accounts are added only through the isolated sign-in flows above; use
+    // `codex login` / `claude` to change the CLI account.
 }
