@@ -241,6 +241,18 @@ enum AccountPresentationHarness {
                 .contains(" · "),
             "available reset details should contain countdown and date/time")
 
+        // Broken accounts must be unmistakable on the card itself: a dead
+        // login otherwise renders stale numbers that look perfectly healthy.
+        expect(AccountPresentation.needsReconnect(reconnectClaude),
+               "a reconnect-required account should be flagged as broken")
+        expect(!AccountPresentation.needsReconnect(codex),
+               "a live account should not be flagged as broken")
+        let cachedOnly = account(
+            .claude, "cached-claude", active: false, windows: [fiveHour],
+            status: .cached(Date(timeIntervalSince1970: 1)))
+        expect(!AccountPresentation.needsReconnect(cachedOnly),
+               "an old but healthy reading is not a broken login")
+
         print("PASS: account presentation")
     }
 }

@@ -18,6 +18,13 @@ enum AccountPresentation {
         }
     }
 
+    /// A dead login: the card must say so instead of showing stale numbers
+    /// that look healthy. An old-but-valid reading is not broken.
+    static func needsReconnect(_ account: Account) -> Bool {
+        if case .reconnectRequired = account.status { return true }
+        return false
+    }
+
     static func primaryWindow(for account: Account) -> UsageWindow? {
         account.longWindow
             ?? account.windows.max(by: { $0.windowMinutes < $1.windowMinutes })

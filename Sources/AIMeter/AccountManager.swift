@@ -434,7 +434,9 @@ final class AccountManager: ObservableObject {
         claudeProfileErrorsByUUID[uuid] = outcome.needsReconnect
             ? ClaudeProvider.reconnectAccountMessage
             : nil
-        if let failure = outcome.failure {
+        // A dead login is shown on the account's own card; the banner keeps
+        // only failures that have no card-level signal.
+        if let failure = outcome.failure, !outcome.needsReconnect {
             failures.append("\(label): \(failure)")
         }
     }

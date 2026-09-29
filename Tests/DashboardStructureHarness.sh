@@ -127,6 +127,25 @@ rg -Fq 'let windows = AccountPresentation.detailWindows(for: account)' "$view" |
   echo "FAIL: inactive account detail should include every provider window" >&2
   exit 1
 }
+# A broken (reconnect-required) account must be unmistakable on its card.
+[ "$(rg -n 'AccountPresentation\.needsReconnect\(account\)' "$view" | wc -l)" -ge 2 ] || {
+  echo "FAIL: active and compact cards do not both flag broken accounts" >&2
+  exit 1
+}
+rg -q 'BrokenAccountHighlight' "$view" || {
+  echo "FAIL: broken accounts have no red border/glow" >&2
+  exit 1
+}
+rg -q 'Text\("Reconnect"\)' "$view" || {
+  echo "FAIL: broken compact cards do not say Reconnect" >&2
+  exit 1
+}
+# Per-account reconnect is shown on the card; the banner keeps other errors.
+rg -q 'if let failure = outcome\.failure, !outcome\.needsReconnect' Sources/AIMeter/AccountManager.swift || {
+  echo "FAIL: the error banner still repeats per-account reconnect messages" >&2
+  exit 1
+}
+
 # Importing or switching would share one Codex login between AI Meter and the
 # CLI, and `codex logout` revokes it server-side (see CodexIndependentProfilesHarness).
 if rg -q 'Import OpenAI Codex login|Make Default|Switch Codex to this account' "$view"; then

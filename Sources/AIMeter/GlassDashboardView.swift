@@ -290,6 +290,7 @@ private struct ActiveAccountCard: View {
     let blurEmails: Bool
 
     var body: some View {
+        let broken = AccountPresentation.needsReconnect(account)
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Circle()
@@ -305,8 +306,9 @@ private struct ActiveAccountCard: View {
                 PlanBadge(plan: account.plan)
                 Spacer()
                 Text(account.status.description)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 9, weight: broken ? .semibold : .regular))
+                    .foregroundStyle(broken ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                    .lineLimit(2)
             }
 
             if account.windows.isEmpty {
@@ -317,6 +319,7 @@ private struct ActiveAccountCard: View {
                 ForEach(account.windows) { window in
                     ActiveWindowRow(window: window)
                 }
+                .opacity(broken ? 0.4 : 1)
             }
         }
         .padding(.horizontal, 9)
@@ -327,6 +330,25 @@ private struct ActiveAccountCard: View {
                 .stroke(.white.opacity(0.065), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .modifier(BrokenAccountHighlight(isBroken: broken, cornerRadius: 11))
+    }
+}
+
+/// Red border + glow for an account whose login is dead, so stale numbers
+/// can never pass for a healthy reading.
+private struct BrokenAccountHighlight: ViewModifier {
+    let isBroken: Bool
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if isBroken {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(Color.red.opacity(0.9), lineWidth: 1.5)
+                }
+            }
+            .shadow(color: isBroken ? Color.red.opacity(0.6) : .clear, radius: 5)
     }
 }
 
@@ -366,6 +388,7 @@ private struct CompactAccountCard: View {
         let short = AccountPresentation.shortWindow(
             for: account,
             excluding: primary)
+        let broken = AccountPresentation.needsReconnect(account)
 
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 4) {
@@ -382,15 +405,24 @@ private struct CompactAccountCard: View {
                     Text("\(Int(primary.remainingPercent.rounded()))%")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .monospacedDigit()
+                        .opacity(broken ? 0.4 : 1)
                     Spacer(minLength: 2)
-                    Text(primary.windowMinutes >= 7 * 24 * 60
-                         ? "weekly left"
-                         : "\(primary.label) left")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    if broken {
+                        Text("Reconnect")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.red)
+                            .lineLimit(1)
+                    } else {
+                        Text(primary.windowMinutes >= 7 * 24 * 60
+                             ? "weekly left"
+                             : "\(primary.label) left")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 RemainingBar(remaining: primary.remainingPercent, height: 5)
+                    .opacity(broken ? 0.4 : 1)
 
                 if let short {
                     HStack(spacing: 5) {
@@ -405,11 +437,12 @@ private struct CompactAccountCard: View {
                             .monospacedDigit()
                             .frame(width: 25, alignment: .trailing)
                     }
+                    .opacity(broken ? 0.4 : 1)
                 }
             } else {
                 Text(account.status.description)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 9, weight: broken ? .semibold : .regular))
+                    .foregroundStyle(broken ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
                     .lineLimit(2)
             }
         }
@@ -421,6 +454,7 @@ private struct CompactAccountCard: View {
                 .stroke(.white.opacity(hovering ? 0.12 : 0.055), lineWidth: 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .modifier(BrokenAccountHighlight(isBroken: broken, cornerRadius: 10))
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onHover { hovering = $0 }
         .onTapGesture { showingResetDetails.toggle() }
