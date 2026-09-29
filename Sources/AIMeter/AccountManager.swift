@@ -25,6 +25,10 @@ final class AccountManager: ObservableObject {
     private var claudePollInFlight = false
     private var claudeUsageError: String?
     private var claudeProfileErrorsByUUID: [String: String] = [:]
+    /// Email of the card whose Reconnect started the pending sign-in, and the
+    /// notice shown until the next sign-in when a different account signed in.
+    private var reconnectTargetEmail: [ProviderKind: String] = [:]
+    private var reconnectNotice: String?
     init(startPolling: Bool = true) {
         try? ProfileStore.ensureDirs()
         try? ClaudeProfileStore.migrateLegacyProfiles()
@@ -442,7 +446,7 @@ final class AccountManager: ObservableObject {
     }
 
     private func publishUsageErrors() {
-        let errors = [codexUsageError, claudeUsageError].compactMap { $0 }
+        let errors = [reconnectNotice, codexUsageError, claudeUsageError].compactMap { $0 }
         lastError = errors.isEmpty ? nil : errors.joined(separator: " · ")
     }
 
@@ -490,12 +494,14 @@ final class AccountManager: ObservableObject {
         case .claude: beginClaudeLogin(browser: preferredReconnectBrowser)
         case .codex: beginCodexLogin()
         }
+        reconnectTargetEmail[account.provider] = account.email
     }
 
     /// Open the chosen browser on Claude's OAuth consent page — the same flow
     /// as `claude login`: a localhost listener catches the redirect
     /// automatically. If the port is taken we fall back to the paste variant.
     func beginClaudeLogin(browser: Browser? = nil) {
+        reconnectTargetEmail[.claude] = nil
         callbackServer?.stop()
         logClaudeLogin("begin browser=\(browser?.name ?? "default")")
         callbackServer = ClaudeOAuth.CallbackServer { [weak self] code, state in
@@ -532,7 +538,12 @@ final class AccountManager: ObservableObject {
                 pendingClaudeLogin = nil
                 callbackServer?.stop()
                 callbackServer = nil
-                lastError = nil
+                reconnectNotice = AccountPresentation.reconnectMismatch(
+                    expected: reconnectTargetEmail[.claude],
+                    signedIn: profile.email,
+                    provider: .claude)
+                reconnectTargetEmail[.claude] = nil
+                publishUsageErrors()
                 lastClaudePoll = nil  // pull limits for the new account now
                 refresh()
             } catch {
@@ -575,6 +586,7 @@ final class AccountManager: ObservableObject {
     /// active throughout the browser login.
     func beginCodexLogin() {
         guard pendingCodexLogin == nil else { return }
+        reconnectTargetEmail[.codex] = nil
 
         var preparedSession: CodexLogin.Session?
         do {
@@ -675,7 +687,12 @@ final class AccountManager: ObservableObject {
                 .codex,
                 from: session.authFile,
                 as: name)
-            lastError = nil
+            reconnectNotice = AccountPresentation.reconnectMismatch(
+                expected: reconnectTargetEmail[.codex],
+                signedIn: identity.email,
+                provider: .codex)
+            reconnectTargetEmail[.codex] = nil
+            publishUsageErrors()
             refresh()
         } catch {
             lastError = error.localizedDescription

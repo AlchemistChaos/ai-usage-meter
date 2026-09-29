@@ -253,6 +253,23 @@ enum AccountPresentationHarness {
         expect(!AccountPresentation.needsReconnect(cachedOnly),
                "an old but healthy reading is not a broken login")
 
+        // Reconnect signs in whichever account the browser is using; say so
+        // when that is not the card that was clicked.
+        expect(AccountPresentation.reconnectMismatch(
+                   expected: "the@chaos.one", signedIn: "river@ultima.inc", provider: .claude)
+                   == "You signed in as river@ultima.inc, not the@chaos.one. In Chrome, switch claude.ai to the@chaos.one, then click Reconnect again.",
+               "a Claude sign-in as the wrong account should say which one and how to fix it")
+        expect(AccountPresentation.reconnectMismatch(
+                   expected: "The@Chaos.one", signedIn: "the@chaos.one", provider: .claude) == nil,
+               "the right account (any letter case) is not a mismatch")
+        expect(AccountPresentation.reconnectMismatch(
+                   expected: nil, signedIn: "river@ultima.inc", provider: .codex) == nil,
+               "a plain Add account (no target) is never a mismatch")
+        expect(AccountPresentation.reconnectMismatch(
+                   expected: "the@chaos.one", signedIn: "river@ultima.inc", provider: .codex)?
+                   .contains("switch chatgpt.com to the@chaos.one") == true,
+               "a Codex mismatch should point at chatgpt.com")
+
         print("PASS: account presentation")
     }
 }

@@ -152,6 +152,15 @@ rg -q '"Google Chrome\.app"' Sources/AIMeter/AccountManager.swift || {
   echo "FAIL: Claude reconnect does not prefer Chrome" >&2
   exit 1
 }
+[ "$(rg -n 'AccountPresentation\.reconnectMismatch\(' Sources/AIMeter/AccountManager.swift | wc -l)" -ge 2 ] || {
+  echo "FAIL: Claude and Codex reconnects do not both warn about signing in as the wrong account" >&2
+  exit 1
+}
+rg -q 'reconnectTargetEmail\[account\.provider\] = account\.email' Sources/AIMeter/AccountManager.swift || {
+  echo "FAIL: Reconnect does not remember which account was clicked" >&2
+  exit 1
+}
+
 # Per-account reconnect is shown on the card; the banner keeps other errors.
 rg -q 'if let failure = outcome\.failure, !outcome\.needsReconnect' Sources/AIMeter/AccountManager.swift || {
   echo "FAIL: the error banner still repeats per-account reconnect messages" >&2

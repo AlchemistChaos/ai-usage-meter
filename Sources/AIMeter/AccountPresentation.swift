@@ -25,6 +25,18 @@ enum AccountPresentation {
         return false
     }
 
+    /// Reconnect signs in whichever account the browser session is using, so
+    /// a different account than the clicked card is easy to miss.
+    static func reconnectMismatch(
+        expected: String?, signedIn: String?, provider: ProviderKind
+    ) -> String? {
+        guard let expected, let signedIn,
+              expected.lowercased() != signedIn.lowercased()
+        else { return nil }
+        let site = provider == .claude ? "claude.ai" : "chatgpt.com"
+        return "You signed in as \(signedIn), not \(expected). In Chrome, switch \(site) to \(expected), then click Reconnect again."
+    }
+
     static func primaryWindow(for account: Account) -> UsageWindow? {
         account.longWindow
             ?? account.windows.max(by: { $0.windowMinutes < $1.windowMinutes })
