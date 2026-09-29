@@ -26,16 +26,6 @@ enum ClaudeOAuth {
         let usesCallback: Bool
     }
 
-    /// `open` arguments that show `url` in a private window of `browserApp`,
-    /// which has no claude.ai session: claude.ai ignores `login_hint` when the
-    /// browser is already signed in and approves as that account. Empty when
-    /// the browser has no known private-window flag.
-    static func privateWindowOpenArguments(browserApp: URL, url: URL) -> [String] {
-        let name = browserApp.deletingPathExtension().lastPathComponent
-        guard name.contains("Chrome") || name == "Chromium" else { return [] }
-        return ["-na", browserApp.path, "--args", "--incognito", url.absoluteString]
-    }
-
     /// Build the authorize URL with a fresh PKCE pair. `loginHint` names the
     /// account to sign in as (Claude Code's own login sends the same param).
     static func begin(usesCallback: Bool, loginHint: String? = nil) -> PendingLogin {

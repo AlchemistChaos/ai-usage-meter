@@ -144,7 +144,7 @@ rg -q 'Button\("Reconnect", action: onReconnect\)' "$view" || {
   echo "FAIL: active and compact cards do not both wire Reconnect to the sign-in flow" >&2
   exit 1
 }
-rg -Uq 'func reconnect\(_ account: Account\)[\s\S]*?case \.claude:\s*beginClaudeLogin\(\s*browser: preferredReconnectBrowser,\s*loginHint: account\.email,\s*privateWindow: true\)[\s\S]*?case \.codex:\s*beginCodexLogin\(\)' Sources/AIMeter/AccountManager.swift || {
+rg -Uq 'func reconnect\(_ account: Account\)[\s\S]*?case \.claude:\s*beginClaudeLogin\(browser: preferredReconnectBrowser, loginHint: account\.email\)[\s\S]*?case \.codex:\s*beginCodexLogin\(\)' Sources/AIMeter/AccountManager.swift || {
   echo "FAIL: Reconnect does not start the right provider's sign-in" >&2
   exit 1
 }

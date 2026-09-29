@@ -492,10 +492,7 @@ final class AccountManager: ObservableObject {
     func reconnect(_ account: Account) {
         switch account.provider {
         case .claude:
-            beginClaudeLogin(
-                browser: preferredReconnectBrowser,
-                loginHint: account.email,
-                privateWindow: true)
+            beginClaudeLogin(browser: preferredReconnectBrowser, loginHint: account.email)
         case .codex: beginCodexLogin()
         }
         reconnectTargetEmail[account.provider] = account.email
@@ -504,11 +501,7 @@ final class AccountManager: ObservableObject {
     /// Open the chosen browser on Claude's OAuth consent page — the same flow
     /// as `claude login`: a localhost listener catches the redirect
     /// automatically. If the port is taken we fall back to the paste variant.
-    func beginClaudeLogin(
-        browser: Browser? = nil,
-        loginHint: String? = nil,
-        privateWindow: Bool = false
-    ) {
+    func beginClaudeLogin(browser: Browser? = nil, loginHint: String? = nil) {
         reconnectTargetEmail[.claude] = nil
         callbackServer?.stop()
         logClaudeLogin("begin browser=\(browser?.name ?? "default")")
@@ -523,20 +516,7 @@ final class AccountManager: ObservableObject {
             loginHint: loginHint)
         logClaudeLogin("pending uses_callback=\(login.usesCallback)")
         pendingClaudeLogin = login
-        let privateArguments = browser.map {
-            ClaudeOAuth.privateWindowOpenArguments(browserApp: $0.appURL, url: login.url)
-        } ?? []
-        if privateWindow, !privateArguments.isEmpty {
-            let opener = Process()
-            opener.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            opener.arguments = privateArguments
-            do {
-                try opener.run()
-            } catch {
-                logClaudeLogin("private window failed \(error.localizedDescription)")
-                NSWorkspace.shared.open(login.url)
-            }
-        } else if let browser {
+        if let browser {
             NSWorkspace.shared.open(
                 [login.url], withApplicationAt: browser.appURL,
                 configuration: NSWorkspace.OpenConfiguration())
