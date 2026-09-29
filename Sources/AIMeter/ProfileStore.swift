@@ -18,7 +18,10 @@ enum ProfileStore {
     static func activeCredentialPath(_ provider: ProviderKind) -> URL {
         switch provider {
         case .codex: return home.appending(path: ".codex/auth.json")
-        case .claude: return home.appending(path: ".claude/.credentials.json")
+        case .claude:
+            // AI Meter never reads or writes Claude Code's credential; its usage
+            // arrives only through the per-account statusline readings.
+            preconditionFailure("Claude Code's credential is off-limits to AI Meter")
         }
     }
 

@@ -359,12 +359,14 @@ final class AccountManager: ObservableObject {
                 let activeProfileName = profiles.first {
                     ClaudeProvider.storedProfile($0).accountUuid == activeUUID
                 }
-                let endpoint = await Self.claudeUsage {
-                    try await ClaudeProvider.activeUsageToken(
-                        profileToken: activeProfileName.map { name in
-                            { try await ClaudeProvider.usableToken(for: name) }
-                        },
-                        claudeCodeToken: ClaudeProvider.freshClaudeCodeToken)
+                // Only the account's own AI Meter login: a token borrowed from
+                // Claude Code carries no account and was once another's.
+                let endpoint: Result<[UsageWindow], Error> = if let activeProfileName {
+                    await Self.claudeUsage {
+                        try await ClaudeProvider.usableToken(for: activeProfileName)
+                    }
+                } else {
+                    .failure(URLError(.userAuthenticationRequired))
                 }
                 recordClaudeUsage(
                     uuid: activeUUID,

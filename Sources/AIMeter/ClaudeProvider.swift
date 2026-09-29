@@ -1,6 +1,4 @@
 import Foundation
-import LocalAuthentication
-import Security
 
 /// Claude Code support: the active account can use Claude Code's current
 /// credential, while additional accounts are stored as app-owned profiles.
@@ -351,7 +349,6 @@ enum ClaudeProvider {
 
     /// Claude Code's public OAuth client id, needed for the refresh grant.
     private static let oauthClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-    private static let claudeCodeKeychainService = "Claude Code-credentials"
 
     struct ProfileToken {
         let accessToken: String
@@ -390,71 +387,6 @@ enum ClaudeProvider {
             refreshToken: oauth["refreshToken"] as? String,
             expiresAt: (oauth["expiresAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) },
             accountUuid: (obj["_ccmanagerIdentity"] as? [String: String])?["accountUuid"])
-    }
-
-    static func claudeCodeCredentialsFile() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: ".claude/.credentials.json")
-    }
-
-    static func claudeCodeToken() -> ProfileToken? {
-        if let keychainData = claudeCodeKeychainData(),
-           let token = decodeProfileToken(data: keychainData) {
-            return token
-        }
-        guard let data = try? Data(contentsOf: claudeCodeCredentialsFile()) else {
-            return nil
-        }
-        return decodeProfileToken(data: data)
-    }
-
-    static func freshClaudeCodeToken() throws -> ProfileToken {
-        guard let token = claudeCodeToken() else {
-            throw URLError(.userAuthenticationRequired)
-        }
-        guard !token.isExpired else {
-            throw URLError(.userAuthenticationRequired)
-        }
-        return token
-    }
-
-    private static func claudeCodeKeychainData() -> Data? {
-        let context = LAContext()
-        context.interactionNotAllowed = true
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: claudeCodeKeychainService,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseAuthenticationContext as String: context,
-        ]
-        // The LAContext above does not cover the login keychain's ACL dialog
-        // ("wants to use your confidential information"), which blocks this
-        // call until answered. Fail fast instead; this read is best-effort.
-        var interactionWasAllowed: DarwinBoolean = true
-        SecKeychainGetUserInteractionAllowed(&interactionWasAllowed)
-        SecKeychainSetUserInteractionAllowed(false)
-        defer { SecKeychainSetUserInteractionAllowed(interactionWasAllowed.boolValue) }
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
-    }
-
-    /// Token for the active account: AI Meter's own chain first, then Claude
-    /// Code's current credential (read-only, never refreshed) when that chain
-    /// is dead. Only auth failures fall back; network errors surface as-is.
-    static func activeUsageToken(
-        profileToken: (() async throws -> ProfileToken)?,
-        claudeCodeToken: () throws -> ProfileToken
-    ) async throws -> ProfileToken {
-        guard let profileToken else { return try claudeCodeToken() }
-        do {
-            return try await profileToken()
-        } catch where isAuthenticationFailure(error) {
-            guard let fallback = try? claudeCodeToken() else { throw error }
-            return fallback
-        }
     }
 
     /// Refresh only credentials created by AI Meter's independent OAuth flow.

@@ -18,28 +18,16 @@ grep -q 'record.origin == .appOAuth' "$sources/ClaudeProvider.swift" || {
   exit 1
 }
 
-grep -q 'static func freshClaudeCodeToken' "$sources/ClaudeProvider.swift" || {
-  echo "FAIL: Claude Code's active read-only token path disappeared" >&2
+# AI Meter must not READ Claude Code's credential either. A borrowed token has
+# no account attached: on 2026-09-29 Claude Code's keychain login was
+# river@ultima.inc while ~/.claude.json said riverscreation, so river@ultima's
+# 99% weekly usage was shown on riverscreation's card. Reading it also hung
+# the poll on a keychain access dialog. Claude Code's usage reaches the meter
+# only through the per-account statusline readings.
+if grep -RnE 'Claude Code-credentials|\.credentials\.json|SecItemCopyMatching' "$sources"; then
+  echo "FAIL: AI Meter reads Claude Code's credential (sites above)" >&2
   exit 1
-}
-
-grep -q 'LAContext()' "$sources/ClaudeProvider.swift" || {
-  echo "FAIL: Claude Code keychain reads do not create a non-interactive auth context" >&2
-  exit 1
-}
-
-# LAContext.interactionNotAllowed does not cover the legacy keychain's
-# "wants to use your confidential information" ACL dialog; that dialog blocked
-# the main-actor poll forever. User interaction must be disabled for the read.
-grep -q 'SecKeychainSetUserInteractionAllowed(false)' "$sources/ClaudeProvider.swift" || {
-  echo "FAIL: Claude Code keychain reads can still block on a keychain access dialog" >&2
-  exit 1
-}
-
-grep -q 'interactionNotAllowed = true' "$sources/ClaudeProvider.swift" || {
-  echo "FAIL: background Claude Code keychain reads may trigger permission prompts" >&2
-  exit 1
-}
+fi
 
 # Guard against over-deletion: the login flow legitimately exchanges an auth code.
 grep -qRE '"grant_type"[[:space:]]*:[[:space:]]*"authorization_code"' "$sources/ClaudeOAuth.swift" || {

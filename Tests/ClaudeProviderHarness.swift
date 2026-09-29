@@ -283,52 +283,6 @@ enum ClaudeProviderHarness {
                    directory: byAccount.appending(path: "missing")).isEmpty,
                "a missing by-account directory should mean no readings")
 
-        // Active account: a dead AI Meter chain must fall back to Claude
-        // Code's own (read-only) credential instead of failing.
-        let cliToken = ClaudeProvider.ProfileToken(
-            accessToken: "cli", refreshToken: nil,
-            expiresAt: Date().addingTimeInterval(3_600), accountUuid: nil)
-        let meterToken = ClaudeProvider.ProfileToken(
-            accessToken: "meter", refreshToken: nil,
-            expiresAt: Date().addingTimeInterval(3_600), accountUuid: nil)
-        let dead: () async throws -> ClaudeProvider.ProfileToken = {
-            throw ClaudeProvider.OAuthRefreshError.rejected("Refresh token expired")
-        }
-        let offline: () async throws -> ClaudeProvider.ProfileToken = {
-            throw URLError(.notConnectedToInternet)
-        }
-        let fellBack = try? await ClaudeProvider.activeUsageToken(
-            profileToken: dead, claudeCodeToken: { cliToken })
-        expect(fellBack?.accessToken == "cli",
-               "a dead AI Meter chain should fall back to Claude Code's credential")
-
-        let preferred = try? await ClaudeProvider.activeUsageToken(
-            profileToken: { meterToken }, claudeCodeToken: { cliToken })
-        expect(preferred?.accessToken == "meter",
-               "a working AI Meter chain should stay the first choice")
-
-        let noProfile = try? await ClaudeProvider.activeUsageToken(
-            profileToken: nil, claudeCodeToken: { cliToken })
-        expect(noProfile?.accessToken == "cli",
-               "no saved profile should use Claude Code's credential")
-
-        var offlineError: Error?
-        do {
-            _ = try await ClaudeProvider.activeUsageToken(
-                profileToken: offline, claudeCodeToken: { cliToken })
-        } catch { offlineError = error }
-        expect((offlineError as? URLError)?.code == .notConnectedToInternet,
-               "network failures are not auth failures and must not be masked")
-
-        var bothDead: Error?
-        do {
-            _ = try await ClaudeProvider.activeUsageToken(
-                profileToken: dead,
-                claudeCodeToken: { throw URLError(.userAuthenticationRequired) })
-        } catch { bothDead = error }
-        expect(bothDead.map(ClaudeProvider.isAuthenticationFailure) == true,
-               "when both credentials are dead the auth failure should surface")
-
         // Per-account outcome: a statusline reading keeps the account healthy
         // even when AI Meter's own login is dead; without one, a dead login
         // asks for reconnect and other failures are reported as-is.
