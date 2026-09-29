@@ -177,7 +177,10 @@ private struct ProviderGlassSection: View {
                 .padding(.horizontal, 2)
 
             if let active = group.active {
-                ActiveAccountCard(account: active, blurEmails: blurEmails)
+                ActiveAccountCard(
+                    account: active,
+                    blurEmails: blurEmails,
+                    onReconnect: { manager.reconnect(active) })
             }
 
             if !group.inactive.isEmpty {
@@ -192,7 +195,10 @@ private struct ProviderGlassSection: View {
 
                 LazyVGrid(columns: columns, spacing: 6) {
                     ForEach(group.inactive) { account in
-                        CompactAccountCard(account: account, blurEmails: blurEmails)
+                        CompactAccountCard(
+                            account: account,
+                            blurEmails: blurEmails,
+                            onReconnect: { manager.reconnect(account) })
                     }
                 }
             }
@@ -288,6 +294,7 @@ private struct ProviderHeader: View {
 private struct ActiveAccountCard: View {
     let account: Account
     let blurEmails: Bool
+    let onReconnect: () -> Void
 
     var body: some View {
         let broken = AccountPresentation.needsReconnect(account)
@@ -305,10 +312,14 @@ private struct ActiveAccountCard: View {
                     font: .system(size: 11, weight: .semibold))
                 PlanBadge(plan: account.plan)
                 Spacer()
-                Text(account.status.description)
-                    .font(.system(size: 9, weight: broken ? .semibold : .regular))
-                    .foregroundStyle(broken ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
-                    .lineLimit(2)
+                if broken {
+                    ReconnectButton(onReconnect: onReconnect)
+                } else {
+                    Text(account.status.description)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
             }
 
             if account.windows.isEmpty {
@@ -331,6 +342,23 @@ private struct ActiveAccountCard: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         .modifier(BrokenAccountHighlight(isBroken: broken, cornerRadius: 11))
+    }
+}
+
+/// The broken card's call to action: starts that provider's sign-in in the
+/// browser, so fixing a dead login is one click.
+private struct ReconnectButton: View {
+    let onReconnect: () -> Void
+
+    var body: some View {
+        Button("Reconnect", action: onReconnect)
+            .buttonStyle(.plain)
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(Color.red.opacity(0.85)))
+            .help("Sign in to this account again in the browser")
     }
 }
 
@@ -380,6 +408,7 @@ private struct ActiveWindowRow: View {
 private struct CompactAccountCard: View {
     let account: Account
     let blurEmails: Bool
+    let onReconnect: () -> Void
     @State private var hovering = false
     @State private var showingResetDetails = false
 
@@ -408,10 +437,7 @@ private struct CompactAccountCard: View {
                         .opacity(broken ? 0.4 : 1)
                     Spacer(minLength: 2)
                     if broken {
-                        Text("Reconnect")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.red)
-                            .lineLimit(1)
+                        ReconnectButton(onReconnect: onReconnect)
                     } else {
                         Text(primary.windowMinutes >= 7 * 24 * 60
                              ? "weekly left"
@@ -439,10 +465,12 @@ private struct CompactAccountCard: View {
                     }
                     .opacity(broken ? 0.4 : 1)
                 }
+            } else if broken {
+                ReconnectButton(onReconnect: onReconnect)
             } else {
                 Text(account.status.description)
-                    .font(.system(size: 9, weight: broken ? .semibold : .regular))
-                    .foregroundStyle(broken ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
         }

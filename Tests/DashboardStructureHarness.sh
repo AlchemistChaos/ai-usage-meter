@@ -136,8 +136,20 @@ rg -q 'BrokenAccountHighlight' "$view" || {
   echo "FAIL: broken accounts have no red border/glow" >&2
   exit 1
 }
-rg -q 'Text\("Reconnect"\)' "$view" || {
-  echo "FAIL: broken compact cards do not say Reconnect" >&2
+rg -q 'Button\("Reconnect", action: onReconnect\)' "$view" || {
+  echo "FAIL: broken cards do not offer a clickable Reconnect" >&2
+  exit 1
+}
+[ "$(rg -n 'onReconnect: \{ manager\.reconnect\(' "$view" | wc -l)" -ge 2 ] || {
+  echo "FAIL: active and compact cards do not both wire Reconnect to the sign-in flow" >&2
+  exit 1
+}
+rg -Uq 'func reconnect\(_ account: Account\)[\s\S]*?case \.claude:\s*beginClaudeLogin\(browser: preferredReconnectBrowser\)[\s\S]*?case \.codex:\s*beginCodexLogin\(\)' Sources/AIMeter/AccountManager.swift || {
+  echo "FAIL: Reconnect does not start the right provider's sign-in" >&2
+  exit 1
+}
+rg -q '"Google Chrome\.app"' Sources/AIMeter/AccountManager.swift || {
+  echo "FAIL: Claude reconnect does not prefer Chrome" >&2
   exit 1
 }
 # Per-account reconnect is shown on the card; the banner keeps other errors.

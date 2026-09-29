@@ -476,6 +476,22 @@ final class AccountManager: ObservableObject {
         .sorted { $0.name < $1.name }
     }
 
+    /// Chrome when installed (where these accounts are signed in), else the
+    /// default browser.
+    var preferredReconnectBrowser: Browser? {
+        availableBrowsers.first { $0.appURL.lastPathComponent == "Google Chrome.app" }
+    }
+
+    /// Start the sign-in for a broken account's provider. Signing in with that
+    /// account replaces its dead saved login in place. Codex's official login
+    /// opens the default browser itself.
+    func reconnect(_ account: Account) {
+        switch account.provider {
+        case .claude: beginClaudeLogin(browser: preferredReconnectBrowser)
+        case .codex: beginCodexLogin()
+        }
+    }
+
     /// Open the chosen browser on Claude's OAuth consent page — the same flow
     /// as `claude login`: a localhost listener catches the redirect
     /// automatically. If the port is taken we fall back to the paste variant.
