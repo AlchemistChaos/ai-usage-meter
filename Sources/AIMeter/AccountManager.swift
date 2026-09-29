@@ -131,7 +131,10 @@ final class AccountManager: ObservableObject {
             }
             let cached = SnapshotCache.get(accountID: id.accountID)
             let status: DataStatus
-            if let error = codexProfileErrorsByAccountID[id.accountID] {
+            if let error = CodexProvider.savedProfileError(
+                accountID: id.accountID,
+                activeAccountID: activeAccountID,
+                errors: codexProfileErrorsByAccountID) {
                 status = .reconnectRequired(error, cachedAt: cached?.capturedAt)
             } else {
                 status = cached.map {
@@ -208,6 +211,7 @@ final class AccountManager: ObservableObject {
                     lastCodexLiveSnapshotCapturedAt = cached.capturedAt
                 }
                 codexUsageError = nil
+                codexProfileErrorsByAccountID[requestedAccountID] = nil
                 publishUsageErrors()
 
                 rebuildAccounts()
@@ -252,8 +256,11 @@ final class AccountManager: ObservableObject {
                     codexProfileErrorsByAccountID[accountID] = nil
                     rebuildAccounts()
                 } catch {
+                    // Only an auth failure means the login expired; otherwise
+                    // keep the cached reading, which shows its own age.
+                    let failure = CodexRateLimitClient.savedProfileFailure(error)
                     codexProfileErrorsByAccountID[accountID] =
-                        "Codex login expired. Add this Codex account again to reconnect it."
+                        failure.needsReconnect ? failure.message : nil
                     rebuildAccounts()
                 }
             }
@@ -324,9 +331,11 @@ final class AccountManager: ObservableObject {
                     : "no reading yet"))
     }
 
-    /// Fetch live usage for EVERY Claude account we have a token for — each
-    /// stored profile carries its own OAuth token (auto-refreshed when expired),
-    /// so all accounts' limits stay visible, not just the active one.
+    /// Fetch usage for EVERY Claude account. The per-account statusline
+    /// readings written by the Claude Code hook need no login, so they are the
+    /// durable source; the live endpoint only adds fresher and model-scoped
+    /// windows when a usable token exists. A dead AI Meter login therefore
+    /// only matters for an account Claude Code has never reported.
     private func pollClaudeUsageIfStale() {
         guard !claudePollInFlight,
               lastClaudePoll.map({ -$0.timeIntervalSinceNow >= 60 }) ?? true
@@ -341,87 +350,53 @@ final class AccountManager: ObservableObject {
         claudePollInFlight = true
         Task { @MainActor in
             defer { claudePollInFlight = false }
+            let readings = ClaudeProvider.statuslineSnapshotsByAccount()
             var polled = Set<String>()
             var failures: [String] = []
-            let activeUUID = ClaudeProvider.identity()?.accountUuid
-            var activeClaudeCodeFailure: String?
 
-            if let activeUUID {
+            if let active = ClaudeProvider.identity() {
+                let activeUUID = active.accountUuid
                 let activeProfileName = profiles.first {
                     ClaudeProvider.storedProfile($0).accountUuid == activeUUID
                 }
-                if let snapshot = ClaudeProvider.latestStatuslineSnapshot() {
-                    var merged = ClaudeProvider.mergeStatuslineSnapshot(
-                        snapshot,
-                        preservingModelWindowsFrom: SnapshotCache.get(
-                            accountID: "claude:\(activeUUID)"))
-                    do {
-                        let windows = try await fetchActiveClaudeUsageWindows(
-                            activeProfileName: activeProfileName)
-                        merged = ClaudeProvider.mergeUsageEndpointWindows(
-                            windows,
-                            into: merged)
-                    } catch {
-                        failures.append(
-                            "Claude Code scoped usage: \(error.localizedDescription)")
-                    }
-                    SnapshotCache.put(
-                        accountID: "claude:\(activeUUID)",
-                        snapshot: merged)
-                    claudeProfileErrorsByUUID[activeUUID] = nil
-                    polled.insert(activeUUID)
-                } else {
-                    do {
-                        let windows = try await fetchActiveClaudeUsageWindows(
-                            activeProfileName: activeProfileName)
-                        SnapshotCache.put(
-                            accountID: "claude:\(activeUUID)",
-                            snapshot: .init(
-                                windows: windows,
-                                plan: nil,
-                                capturedAt: Date()))
-                        claudeProfileErrorsByUUID[activeUUID] = nil
-                        polled.insert(activeUUID)
-                    } catch {
-                        activeClaudeCodeFailure = ClaudeProvider.reconnectAccountMessage
-                        // Drive claudeAccount()'s suppression too, otherwise the card
-                        // keeps rendering the last cached windows as if they were live.
-                        claudeProfileErrorsByUUID[activeUUID] = ClaudeProvider.reconnectAccountMessage
-                    }
+                let endpoint = await Self.claudeUsage {
+                    try await ClaudeProvider.activeUsageToken(
+                        profileToken: activeProfileName.map { name in
+                            { try await ClaudeProvider.usableToken(for: name) }
+                        },
+                        claudeCodeToken: ClaudeProvider.freshClaudeCodeToken)
                 }
+                recordClaudeUsage(
+                    uuid: activeUUID,
+                    label: active.email ?? "Claude Code",
+                    reading: readings[activeUUID],
+                    endpoint: endpoint,
+                    failures: &failures)
+                polled.insert(activeUUID)
             }
 
             for name in profiles {
                 // Skip profiles that are the same account we already polled.
-                let profileUUID = ClaudeProvider.profileToken(name)?.accountUuid
+                let stored = ClaudeProvider.storedProfile(name)
+                let profileUUID = stored.accountUuid
+                    ?? ClaudeProvider.profileToken(name)?.accountUuid
                 if let profileUUID, polled.contains(profileUUID) { continue }
-                do {
-                    let tok = try await ClaudeProvider.usableToken(for: name)
-                    if let uuid = tok.accountUuid {
-                        claudeProfileErrorsByUUID[uuid] = nil
-                    }
-                    let windows = try await ClaudeProvider.fetchUsage(token: tok.accessToken)
-                    if let uuid = tok.accountUuid {
-                        SnapshotCache.put(
-                            accountID: "claude:\(uuid)",
-                            snapshot: .init(windows: windows, plan: nil, capturedAt: Date()))
-                        claudeProfileErrorsByUUID[uuid] = nil
-                        polled.insert(uuid)
-                    }
-                } catch {
-                    if let profileUUID,
-                       ClaudeProvider.isAuthenticationFailure(error) {
-                        claudeProfileErrorsByUUID[profileUUID] =
-                            ClaudeProvider.reconnectAccountMessage
-                    }
-                    failures.append("\(name): \(error.localizedDescription)")
+                let endpoint = await Self.claudeUsage {
+                    try await ClaudeProvider.usableToken(for: name)
                 }
-            }
-
-            if let activeUUID,
-               !polled.contains(activeUUID),
-               let activeClaudeCodeFailure {
-                failures.append("Claude Code: \(activeClaudeCodeFailure)")
+                guard let profileUUID else {
+                    if case .failure(let error) = endpoint {
+                        failures.append("\(name): \(error.localizedDescription)")
+                    }
+                    continue
+                }
+                recordClaudeUsage(
+                    uuid: profileUUID,
+                    label: stored.email ?? name,
+                    reading: readings[profileUUID],
+                    endpoint: endpoint,
+                    failures: &failures)
+                polled.insert(profileUUID)
             }
 
             lastClaudePoll = Date()
@@ -433,15 +408,39 @@ final class AccountManager: ObservableObject {
         }
     }
 
-    private func fetchActiveClaudeUsageWindows(
-        activeProfileName: String?
-    ) async throws -> [UsageWindow] {
-        if let activeProfileName {
-            let tok = try await ClaudeProvider.usableToken(for: activeProfileName)
-            return try await ClaudeProvider.fetchUsage(token: tok.accessToken)
+    private static func claudeUsage(
+        token: () async throws -> ClaudeProvider.ProfileToken
+    ) async -> Result<[UsageWindow], Error> {
+        do {
+            let accessToken = try await token().accessToken
+            return .success(try await ClaudeProvider.fetchUsage(token: accessToken))
+        } catch {
+            return .failure(error)
         }
-        let tok = try ClaudeProvider.freshClaudeCodeToken()
-        return try await ClaudeProvider.fetchUsage(token: tok.accessToken)
+    }
+
+    /// Cache one account's reading and drive its card's reconnect state off
+    /// claudeProfileErrorsByUUID[uuid], so stale windows are never shown live.
+    private func recordClaudeUsage(
+        uuid: String,
+        label: String,
+        reading: CodexProvider.Snapshot?,
+        endpoint: Result<[UsageWindow], Error>,
+        failures: inout [String]
+    ) {
+        let outcome = ClaudeProvider.accountUsage(
+            statusline: reading,
+            endpoint: endpoint,
+            cached: SnapshotCache.get(accountID: "claude:\(uuid)"))
+        if let snapshot = outcome.snapshot {
+            SnapshotCache.put(accountID: "claude:\(uuid)", snapshot: snapshot)
+        }
+        claudeProfileErrorsByUUID[uuid] = outcome.needsReconnect
+            ? ClaudeProvider.reconnectAccountMessage
+            : nil
+        if let failure = outcome.failure {
+            failures.append("\(label): \(failure)")
+        }
     }
 
     private func publishUsageErrors() {

@@ -75,7 +75,7 @@ To print the local credential/data sources detected by the app:
 
 ## How usage is obtained
 
-**Claude:** for the active Claude Code account, the app first reads Claude Code statusline `rate_limits` captured in `~/.ccmanager/claude-statusline/latest.json`, then tries Claude Code's current unexpired OAuth credential. Every account added in AI Meter has a separate UUID-keyed OAuth profile. AI Meter refreshes only those app-owned chains and never rotates or writes Claude Code's credential.
+**Claude:** the durable source is Claude Code's own statusline `rate_limits`. `scripts/claude-statusline-capture.sh` (installed at `~/.ccmanager/bin/` and set as `statusLine` in each Claude Code config dir) files every reading under the account logged in to that config dir *at capture time*, in `~/.ccmanager/claude-statusline/by-account/<accountUuid>.json`. No login is involved, so nothing can expire. The live usage endpoint then adds fresher and model-scoped windows when a usable token exists: the active account tries its AI Meter profile, then Claude Code's current unexpired credential (read-only). Every account added in AI Meter has a separate UUID-keyed OAuth profile. AI Meter refreshes only those app-owned chains and never rotates or writes Claude Code's credential. Anthropic eventually rejects those app-owned chains (observed after roughly four weeks), so a dead one only asks to reconnect when Claude Code has never reported that account.
 
 **Codex:** the app asks the installed official Codex client for `account/rateLimits/read` at most once per minute per account. Saved profiles launch app-server with that profile directory as isolated `CODEX_HOME`; the active `~/.codex/auth.json` is never replaced during background polling. Legacy local rate-limit headers remain a fallback for the active account.
 
@@ -104,6 +104,7 @@ bash Tests/NoAnalyticsStructureHarness.sh
 bash Tests/ClaudeAuthStructureHarness.sh
 bash Tests/NoTokenRotationHarness.sh
 bash Tests/AllClaudeAccountsStructureHarness.sh
+bash Tests/StatuslineCaptureByAccountHarness.sh
 swiftc -parse-as-library Sources/AIMeter/Models.swift \
   Sources/AIMeter/CodexProvider.swift \
   Sources/AIMeter/CodexLogin.swift \

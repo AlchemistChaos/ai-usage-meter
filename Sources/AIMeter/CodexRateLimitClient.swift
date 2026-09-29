@@ -32,6 +32,22 @@ enum CodexRateLimitClient {
         }
     }
 
+    /// How a failed saved-profile poll is shown. Only an auth failure means
+    /// the login expired; anything else (timeout, crashed helper) is reported
+    /// as-is and leaves the cached reading in place.
+    static func savedProfileFailure(_ error: Error) -> (message: String, needsReconnect: Bool) {
+        let detail = error.localizedDescription
+        let lowered = detail.lowercased()
+        let authMarkers = [
+            "authentication required", "unauthorized", "401", "refresh token",
+            "refresh_token", "log in", "login", "sign in", "expired",
+        ]
+        if authMarkers.contains(where: lowered.contains) {
+            return ("Codex login expired. Add this Codex account again to reconnect it.", true)
+        }
+        return ("Codex couldn't read limits: \(detail)", false)
+    }
+
     private struct Response: Decodable {
         let id: Int?
         let result: ResultPayload?

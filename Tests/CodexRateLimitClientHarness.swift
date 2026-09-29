@@ -198,6 +198,33 @@ enum CodexRateLimitClientHarness {
                 from: Data(errorResponse.utf8), capturedAt: capturedAt)
         }
 
+        // Saved-profile failures: only real auth failures ask to reconnect;
+        // a timeout or crashed helper must not claim the login expired.
+        let authFailure = CodexRateLimitClient.savedProfileFailure(
+            CodexRateLimitClient.ClientError.protocolError(
+                "codex account authentication required to read rate limits"))
+        expect(authFailure.needsReconnect,
+               "an app-server auth failure should ask to reconnect")
+        expect(authFailure.message.contains("Add this Codex account again"),
+               "an auth failure should explain how to reconnect")
+        let timeout = CodexRateLimitClient.savedProfileFailure(
+            CodexRateLimitClient.ClientError.timedOut)
+        expect(!timeout.needsReconnect,
+               "a timeout is not an expired login")
+        expect(timeout.message.contains("timed out"),
+               "a non-auth failure should show the real error")
+
+        // The saved-profile error belongs to the saved-profile poll, which
+        // never runs for the active account, so it must not stick there.
+        let errors = ["acct-a": "Codex login expired.", "acct-b": "Codex login expired."]
+        expect(CodexProvider.savedProfileError(
+                   accountID: "acct-a", activeAccountID: "acct-a", errors: errors) == nil,
+               "the active account must not show a saved-profile error")
+        expect(CodexProvider.savedProfileError(
+                   accountID: "acct-b", activeAccountID: "acct-a", errors: errors)
+                   == "Codex login expired.",
+               "an inactive account keeps its own saved-profile error")
+
         print("PASS: Codex app-server rate-limit parsing")
     }
 }

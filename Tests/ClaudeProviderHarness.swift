@@ -26,7 +26,7 @@ private func expectThrows(
 
 @main
 enum ClaudeProviderHarness {
-    static func main() {
+    static func main() async {
         let ok = """
         {
           "five_hour": {"utilization": 0.0, "resets_at": null},
@@ -243,6 +243,139 @@ enum ClaudeProviderHarness {
         expect(
             mergedLiveUsage.windows.first(where: { $0.label == "Fable wk" })?.usedPercent == 89,
             "live usage endpoint should replace stale scoped Fable usage")
+
+        // Per-account statusline readings: keyed by the account UUID the
+        // capture hook recorded, never by whoever is logged in now.
+        let byAccount = FileManager.default.temporaryDirectory
+            .appending(path: "aimeter-by-account-\(UUID().uuidString)")
+        try! FileManager.default.createDirectory(
+            at: byAccount, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: byAccount) }
+        func writeReading(_ name: String, _ body: String, modified: Date) {
+            let url = byAccount.appending(path: name)
+            try! Data(body.utf8).write(to: url)
+            try! FileManager.default.setAttributes(
+                [.modificationDate: modified], ofItemAtPath: url.path)
+        }
+        let readAt = Date(timeIntervalSince1970: 1_790_690_000)
+        writeReading(
+            "uuid-a.json",
+            #"{"rate_limits":{"five_hour":{"used_percentage":12,"resets_at":1790703600}}}"#,
+            modified: readAt)
+        writeReading(
+            "uuid-b.json",
+            #"{"rate_limits":{"seven_day":{"used_percentage":34,"resets_at":1791252000}}}"#,
+            modified: readAt.addingTimeInterval(-3_600))
+        writeReading("uuid-c.json", #"{"model":"no limits yet"}"#, modified: readAt)
+        writeReading("uuid-d.json.123", #"{"rate_limits":{}}"#, modified: readAt)
+        writeReading("notes.txt", "not json", modified: readAt)
+
+        let readings = ClaudeProvider.statuslineSnapshotsByAccount(directory: byAccount)
+        expect(Set(readings.keys) == ["uuid-a", "uuid-b"],
+               "only complete per-account readings should be returned, keyed by UUID")
+        expect(readings["uuid-a"]?.windows.first?.usedPercent == 12,
+               "account A should keep its own reading")
+        expect(readings["uuid-b"]?.windows.first?.label == "Weekly",
+               "account B should keep its own reading")
+        expect(readings["uuid-b"]?.capturedAt == readAt.addingTimeInterval(-3_600),
+               "reading age should come from when the hook wrote it")
+        expect(ClaudeProvider.statuslineSnapshotsByAccount(
+                   directory: byAccount.appending(path: "missing")).isEmpty,
+               "a missing by-account directory should mean no readings")
+
+        // Active account: a dead AI Meter chain must fall back to Claude
+        // Code's own (read-only) credential instead of failing.
+        let cliToken = ClaudeProvider.ProfileToken(
+            accessToken: "cli", refreshToken: nil,
+            expiresAt: Date().addingTimeInterval(3_600), accountUuid: nil)
+        let meterToken = ClaudeProvider.ProfileToken(
+            accessToken: "meter", refreshToken: nil,
+            expiresAt: Date().addingTimeInterval(3_600), accountUuid: nil)
+        let dead: () async throws -> ClaudeProvider.ProfileToken = {
+            throw ClaudeProvider.OAuthRefreshError.rejected("Refresh token expired")
+        }
+        let offline: () async throws -> ClaudeProvider.ProfileToken = {
+            throw URLError(.notConnectedToInternet)
+        }
+        let fellBack = try? await ClaudeProvider.activeUsageToken(
+            profileToken: dead, claudeCodeToken: { cliToken })
+        expect(fellBack?.accessToken == "cli",
+               "a dead AI Meter chain should fall back to Claude Code's credential")
+
+        let preferred = try? await ClaudeProvider.activeUsageToken(
+            profileToken: { meterToken }, claudeCodeToken: { cliToken })
+        expect(preferred?.accessToken == "meter",
+               "a working AI Meter chain should stay the first choice")
+
+        let noProfile = try? await ClaudeProvider.activeUsageToken(
+            profileToken: nil, claudeCodeToken: { cliToken })
+        expect(noProfile?.accessToken == "cli",
+               "no saved profile should use Claude Code's credential")
+
+        var offlineError: Error?
+        do {
+            _ = try await ClaudeProvider.activeUsageToken(
+                profileToken: offline, claudeCodeToken: { cliToken })
+        } catch { offlineError = error }
+        expect((offlineError as? URLError)?.code == .notConnectedToInternet,
+               "network failures are not auth failures and must not be masked")
+
+        var bothDead: Error?
+        do {
+            _ = try await ClaudeProvider.activeUsageToken(
+                profileToken: dead,
+                claudeCodeToken: { throw URLError(.userAuthenticationRequired) })
+        } catch { bothDead = error }
+        expect(bothDead.map(ClaudeProvider.isAuthenticationFailure) == true,
+               "when both credentials are dead the auth failure should surface")
+
+        // Per-account outcome: a statusline reading keeps the account healthy
+        // even when AI Meter's own login is dead; without one, a dead login
+        // asks for reconnect and other failures are reported as-is.
+        let now = Date(timeIntervalSince1970: 1_790_695_000)
+        let reading = CodexProvider.Snapshot(
+            windows: [UsageWindow(label: "5h", usedPercent: 40, windowMinutes: 300,
+                                  resetsAt: now.addingTimeInterval(3_600))],
+            plan: nil, capturedAt: now.addingTimeInterval(-120))
+        let endpoint = [
+            UsageWindow(label: "5h", usedPercent: 41, windowMinutes: 300,
+                        resetsAt: now.addingTimeInterval(3_600)),
+            UsageWindow(label: "Fable wk", usedPercent: 7, windowMinutes: 10_080,
+                        resetsAt: now.addingTimeInterval(86_400)),
+        ]
+        let authDead = ClaudeProvider.OAuthRefreshError.rejected("Refresh token expired")
+
+        let coveredDead = ClaudeProvider.accountUsage(
+            statusline: reading, endpoint: .failure(authDead), cached: nil, now: now)
+        expect(coveredDead.snapshot?.windows.first?.usedPercent == 40,
+               "a dead login must not hide the statusline reading")
+        expect(coveredDead.failure == nil && !coveredDead.needsReconnect,
+               "an account covered by the statusline must not show a dead-login error")
+
+        let coveredLive = ClaudeProvider.accountUsage(
+            statusline: reading, endpoint: .success(endpoint), cached: nil, now: now)
+        expect(coveredLive.snapshot?.windows.map(\.label) == ["5h", "Fable wk"],
+               "a live endpoint should add model-scoped windows to the reading")
+        expect(coveredLive.snapshot?.windows.first?.usedPercent == 41,
+               "a live endpoint reading should replace the older statusline value")
+
+        let uncoveredLive = ClaudeProvider.accountUsage(
+            statusline: nil, endpoint: .success(endpoint), cached: nil, now: now)
+        expect(uncoveredLive.snapshot?.capturedAt == now && uncoveredLive.failure == nil,
+               "an endpoint-only account should be read live")
+
+        let uncoveredDead = ClaudeProvider.accountUsage(
+            statusline: nil, endpoint: .failure(authDead), cached: nil, now: now)
+        expect(uncoveredDead.snapshot == nil && uncoveredDead.needsReconnect,
+               "an endpoint-only account with a dead login should ask to reconnect")
+        expect(uncoveredDead.failure == ClaudeProvider.reconnectAccountMessage,
+               "a dead login should use the reconnect copy")
+
+        let uncoveredOffline = ClaudeProvider.accountUsage(
+            statusline: nil, endpoint: .failure(URLError(.notConnectedToInternet)),
+            cached: nil, now: now)
+        expect(uncoveredOffline.failure != nil && !uncoveredOffline.needsReconnect,
+               "a network failure is not a reason to reconnect")
 
         print("PASS: Claude provider usage parsing")
     }

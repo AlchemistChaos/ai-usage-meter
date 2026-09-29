@@ -31,14 +31,26 @@ rg -q 'activeProfileName' "$manager" || {
   exit 1
 }
 
-rg -Uq 'fetchActiveClaudeUsageWindows\(\s*\n\s*activeProfileName: activeProfileName\)' "$manager" || {
-  echo "FAIL: active Claude polling does not use the non-prompting token helper" >&2
+rg -q 'ClaudeProvider\.activeUsageToken\(' "$manager" || {
+  echo "FAIL: active Claude polling does not fall back to Claude Code's credential" >&2
   exit 1
 }
 
-rg -q 'ClaudeProvider\.usableToken\(for: activeProfileName\)' "$manager" || {
+rg -Uq 'activeProfileName\.map \{ name in\s*\n\s*\{ try await ClaudeProvider\.usableToken\(for: name\) \}' "$manager" || {
   echo "FAIL: active saved Claude profile is not used to refresh scoped usage" >&2
   exit 1
 }
+
+rg -q 'ClaudeProvider\.statuslineSnapshotsByAccount\(\)' "$manager" || {
+  echo "FAIL: Claude polling does not read the per-account statusline readings" >&2
+  exit 1
+}
+
+# latest.json has no account attached; reading it would credit one account's
+# usage to whoever happens to be logged in now.
+if rg -q 'latest\.json|latestStatuslineSnapshot' Sources/AIMeter; then
+  echo "FAIL: the unattributed latest.json statusline reading is used again" >&2
+  exit 1
+fi
 
 echo "PASS: all saved Claude accounts are UUID-keyed, polled, and deduplicated"

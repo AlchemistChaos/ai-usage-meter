@@ -117,6 +117,17 @@ enum CodexProvider {
     /// attributed to the active credential when it was recorded after that
     /// credential file was installed; otherwise it may belong to the account
     /// that was active immediately before a switch.
+    /// A saved-profile poll error for one account card. That poll never runs
+    /// for the active account, so an error recorded before the account became
+    /// active could otherwise never clear.
+    static func savedProfileError(
+        accountID: String,
+        activeAccountID: String?,
+        errors: [String: String]
+    ) -> String? {
+        accountID == activeAccountID ? nil : errors[accountID]
+    }
+
     static func canAttributeSQLiteFallback(
         capturedAt: Date,
         credentialModifiedAt: Date

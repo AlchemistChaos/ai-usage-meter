@@ -9,7 +9,8 @@ cd "$(dirname "$0")/.."
 
 manager="Sources/AIMeter/AccountManager.swift"
 
-grep -q 'claudeProfileErrorsByUUID\[activeUUID\] = ClaudeProvider.reconnectAccountMessage' "$manager" || {
+grep -Eq 'claudeProfileErrorsByUUID\[uuid\] = outcome\.needsReconnect' "$manager" \
+  && grep -q 'uuid: activeUUID' "$manager" || {
   echo "FAIL: active-account auth failure does not set claudeProfileErrorsByUUID[activeUUID]," >&2
   echo "      so claudeAccount() never suppresses its stale windows and the card keeps" >&2
   echo "      showing old usage under a green dot." >&2

@@ -137,17 +137,30 @@ enum ClaudeProvider {
         return windows
     }
 
-    static func statuslineSnapshotFile() -> URL {
+    /// Where the capture hook files each reading under the account UUID that
+    /// was logged in to the emitting Claude Code config dir at capture time.
+    static func statuslineByAccountDirectory() -> URL {
         ProfileStore.root
             .appending(path: "claude-statusline")
-            .appending(path: "latest.json")
+            .appending(path: "by-account")
     }
 
-    static func latestStatuslineSnapshot() -> CodexProvider.Snapshot? {
-        let url = statuslineSnapshotFile()
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        let capturedAt = CodexProvider.modificationDate(at: url) ?? Date()
-        return decodeStatuslineSnapshot(data: data, capturedAt: capturedAt)
+    /// Credential-free usage for every account used in Claude Code, keyed by
+    /// account UUID. Nothing here can expire or be revoked.
+    static func statuslineSnapshotsByAccount(
+        directory: URL = statuslineByAccountDirectory()
+    ) -> [String: CodexProvider.Snapshot] {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil)) ?? []
+        var result: [String: CodexProvider.Snapshot] = [:]
+        for url in files where url.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: url),
+                  let capturedAt = CodexProvider.modificationDate(at: url),
+                  let snapshot = decodeStatuslineSnapshot(data: data, capturedAt: capturedAt)
+            else { continue }
+            result[url.deletingPathExtension().lastPathComponent] = snapshot
+        }
+        return result
     }
 
     static func decodeStatuslineSnapshot(
@@ -219,6 +232,44 @@ enum ClaudeProvider {
             windows: statusline.windows + preserved,
             plan: statusline.plan ?? cached?.plan,
             capturedAt: statusline.capturedAt)
+    }
+
+    struct AccountUsage {
+        let snapshot: CodexProvider.Snapshot?
+        let failure: String?
+        let needsReconnect: Bool
+    }
+
+    /// One Claude account's reading. A statusline reading needs no login, so
+    /// it keeps the account healthy even when AI Meter's own login is dead;
+    /// the live endpoint only adds fresher and model-scoped windows.
+    static func accountUsage(
+        statusline: CodexProvider.Snapshot?,
+        endpoint: Result<[UsageWindow], Error>,
+        cached: CachedSnapshot?,
+        now: Date = Date()
+    ) -> AccountUsage {
+        switch (statusline, endpoint) {
+        case (let reading?, .success(let windows)):
+            return .init(
+                snapshot: mergeUsageEndpointWindows(windows, into: reading, capturedAt: now),
+                failure: nil, needsReconnect: false)
+        case (let reading?, .failure):
+            return .init(
+                snapshot: mergeStatuslineSnapshot(
+                    reading, preservingModelWindowsFrom: cached, now: now),
+                failure: nil, needsReconnect: false)
+        case (nil, .success(let windows)):
+            return .init(
+                snapshot: .init(windows: windows, plan: nil, capturedAt: now),
+                failure: nil, needsReconnect: false)
+        case (nil, .failure(let error)):
+            let isAuth = isAuthenticationFailure(error)
+            return .init(
+                snapshot: nil,
+                failure: isAuth ? reconnectAccountMessage : error.localizedDescription,
+                needsReconnect: isAuth)
+        }
     }
 
     static func mergeUsageEndpointWindows(
@@ -381,6 +432,22 @@ enum ClaudeProvider {
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess else { return nil }
         return result as? Data
+    }
+
+    /// Token for the active account: AI Meter's own chain first, then Claude
+    /// Code's current credential (read-only, never refreshed) when that chain
+    /// is dead. Only auth failures fall back; network errors surface as-is.
+    static func activeUsageToken(
+        profileToken: (() async throws -> ProfileToken)?,
+        claudeCodeToken: () throws -> ProfileToken
+    ) async throws -> ProfileToken {
+        guard let profileToken else { return try claudeCodeToken() }
+        do {
+            return try await profileToken()
+        } catch where isAuthenticationFailure(error) {
+            guard let fallback = try? claudeCodeToken() else { throw error }
+            return fallback
+        }
     }
 
     /// Refresh only credentials created by AI Meter's independent OAuth flow.
