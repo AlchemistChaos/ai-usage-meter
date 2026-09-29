@@ -39,6 +39,23 @@ enum ClaudeOAuthHarness {
         expect(decoded.scopes == ["user:profile", "user:inference"],
                "rotated scopes must be retained")
 
+        // Reconnect aims the consent page at the broken card's account, the
+        // same login_hint parameter Claude Code's own login sends.
+        func query(_ url: URL) -> [String: String] {
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+        }
+        let hinted = ClaudeOAuth.begin(usesCallback: true, loginHint: "the@chaos.one")
+        guard query(hinted.url)["login_hint"] == "the@chaos.one" else {
+            fputs("FAIL: Reconnect sign-in does not name the account to sign in as\n", stderr)
+            exit(1)
+        }
+        let plain = ClaudeOAuth.begin(usesCallback: true)
+        guard query(plain.url)["login_hint"] == nil else {
+            fputs("FAIL: a plain Add account should not force an account\n", stderr)
+            exit(1)
+        }
+
         print("PASS: app-owned Claude OAuth refresh protocol")
     }
 }

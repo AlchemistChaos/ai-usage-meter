@@ -26,8 +26,9 @@ enum ClaudeOAuth {
         let usesCallback: Bool
     }
 
-    /// Build the authorize URL with a fresh PKCE pair.
-    static func begin(usesCallback: Bool) -> PendingLogin {
+    /// Build the authorize URL with a fresh PKCE pair. `loginHint` names the
+    /// account to sign in as (Claude Code's own login sends the same param).
+    static func begin(usesCallback: Bool, loginHint: String? = nil) -> PendingLogin {
         let verifier = randomURLSafe(64)
         let state = randomURLSafe(32)
         let challenge = Data(SHA256.hash(data: Data(verifier.utf8)))
@@ -47,6 +48,9 @@ enum ClaudeOAuth {
             .init(name: "state", value: state),
         ]
         if !usesCallback { items.insert(.init(name: "code", value: "true"), at: 0) }
+        if let loginHint, !loginHint.isEmpty {
+            items.append(.init(name: "login_hint", value: loginHint))
+        }
         c.queryItems = items
         return PendingLogin(url: c.url!, verifier: verifier, state: state,
                             usesCallback: usesCallback)

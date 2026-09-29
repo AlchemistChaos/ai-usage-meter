@@ -491,7 +491,8 @@ final class AccountManager: ObservableObject {
     /// opens the default browser itself.
     func reconnect(_ account: Account) {
         switch account.provider {
-        case .claude: beginClaudeLogin(browser: preferredReconnectBrowser)
+        case .claude:
+            beginClaudeLogin(browser: preferredReconnectBrowser, loginHint: account.email)
         case .codex: beginCodexLogin()
         }
         reconnectTargetEmail[account.provider] = account.email
@@ -500,7 +501,7 @@ final class AccountManager: ObservableObject {
     /// Open the chosen browser on Claude's OAuth consent page — the same flow
     /// as `claude login`: a localhost listener catches the redirect
     /// automatically. If the port is taken we fall back to the paste variant.
-    func beginClaudeLogin(browser: Browser? = nil) {
+    func beginClaudeLogin(browser: Browser? = nil, loginHint: String? = nil) {
         reconnectTargetEmail[.claude] = nil
         callbackServer?.stop()
         logClaudeLogin("begin browser=\(browser?.name ?? "default")")
@@ -510,7 +511,9 @@ final class AccountManager: ObservableObject {
                 self?.completeClaudeLogin(pasted: "\(code)#\(state)")
             }
         }
-        let login = ClaudeOAuth.begin(usesCallback: callbackServer != nil)
+        let login = ClaudeOAuth.begin(
+            usesCallback: callbackServer != nil,
+            loginHint: loginHint)
         logClaudeLogin("pending uses_callback=\(login.usesCallback)")
         pendingClaudeLogin = login
         if let browser {
