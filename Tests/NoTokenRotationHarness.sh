@@ -28,6 +28,14 @@ grep -q 'LAContext()' "$sources/ClaudeProvider.swift" || {
   exit 1
 }
 
+# LAContext.interactionNotAllowed does not cover the legacy keychain's
+# "wants to use your confidential information" ACL dialog; that dialog blocked
+# the main-actor poll forever. User interaction must be disabled for the read.
+grep -q 'SecKeychainSetUserInteractionAllowed(false)' "$sources/ClaudeProvider.swift" || {
+  echo "FAIL: Claude Code keychain reads can still block on a keychain access dialog" >&2
+  exit 1
+}
+
 grep -q 'interactionNotAllowed = true' "$sources/ClaudeProvider.swift" || {
   echo "FAIL: background Claude Code keychain reads may trigger permission prompts" >&2
   exit 1

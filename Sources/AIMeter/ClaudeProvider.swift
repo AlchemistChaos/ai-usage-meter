@@ -428,6 +428,13 @@ enum ClaudeProvider {
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecUseAuthenticationContext as String: context,
         ]
+        // The LAContext above does not cover the login keychain's ACL dialog
+        // ("wants to use your confidential information"), which blocks this
+        // call until answered. Fail fast instead; this read is best-effort.
+        var interactionWasAllowed: DarwinBoolean = true
+        SecKeychainGetUserInteractionAllowed(&interactionWasAllowed)
+        SecKeychainSetUserInteractionAllowed(false)
+        defer { SecKeychainSetUserInteractionAllowed(interactionWasAllowed.boolValue) }
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess else { return nil }
