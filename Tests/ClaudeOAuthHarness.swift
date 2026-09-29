@@ -56,6 +56,23 @@ enum ClaudeOAuthHarness {
             exit(1)
         }
 
+        // claude.ai ignores login_hint when the browser is already signed in
+        // (a Reconnect for the@chaos.one approved as river@ultima.inc), so a
+        // reconnect opens a private window that has no claude.ai session.
+        let chrome = URL(fileURLWithPath: "/Applications/Google Chrome.app")
+        let args = ClaudeOAuth.privateWindowOpenArguments(
+            browserApp: chrome, url: hinted.url)
+        guard args == ["-na", chrome.path, "--args", "--incognito", hinted.url.absoluteString] else {
+            fputs("FAIL: Chrome reconnect does not open a private window: \(args)\n", stderr)
+            exit(1)
+        }
+        guard ClaudeOAuth.privateWindowOpenArguments(
+                  browserApp: URL(fileURLWithPath: "/Applications/Safari.app"),
+                  url: hinted.url).isEmpty else {
+            fputs("FAIL: browsers without a known private-window flag must fall back\n", stderr)
+            exit(1)
+        }
+
         print("PASS: app-owned Claude OAuth refresh protocol")
     }
 }
