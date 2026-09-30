@@ -144,7 +144,7 @@ rg -q 'Button\("Reconnect", action: onReconnect\)' "$view" || {
   echo "FAIL: active and compact cards do not both wire Reconnect to the sign-in flow" >&2
   exit 1
 }
-rg -Uq 'func reconnect\(_ account: Account\)[\s\S]*?case \.claude:\s*beginClaudeLogin\(browser: preferredReconnectBrowser, loginHint: account\.email\)[\s\S]*?case \.codex:\s*beginCodexLogin\(\)' Sources/AIMeter/AccountManager.swift || {
+rg -Uq 'func reconnect\(_ account: Account\)[\s\S]*?case \.claude:\s*beginClaudeLogin\(\s*browser: preferredReconnectBrowser,\s*loginHint: account\.email,\s*pasteCode: true\)[\s\S]*?case \.codex:\s*beginCodexLogin\(\)' Sources/AIMeter/AccountManager.swift || {
   echo "FAIL: Reconnect does not start the right provider's sign-in" >&2
   exit 1
 }
@@ -158,6 +158,23 @@ rg -q '"Google Chrome\.app"' Sources/AIMeter/AccountManager.swift || {
 }
 rg -q 'reconnectTargetEmail\[account\.provider\] = account\.email' Sources/AIMeter/AccountManager.swift || {
   echo "FAIL: Reconnect does not remember which account was clicked" >&2
+  exit 1
+}
+
+# Claude Reconnect uses the copy-code sign-in: the approval can happen in any
+# browser window (the meter cannot pick which one is signed into the account)
+# and claude.ai's result is visible on the page instead of a lost redirect.
+rg -q 'NSPasteboard\.general\.setString\(login\.url\.absoluteString' Sources/AIMeter/AccountManager.swift || {
+  echo "FAIL: Claude Reconnect does not copy the sign-in link" >&2
+  exit 1
+}
+rg -q 'Sign-in link copied' "$view" || {
+  echo "FAIL: the paste box does not explain the copy-code sign-in" >&2
+  exit 1
+}
+
+rg -q 'Button\("Paste code"\)' "$view" && rg -q 'NSPasteboard\.general\.string\(forType: \.string\)' "$view" || {
+  echo "FAIL: the copy-code sign-in needs typing; add a one-click Paste code" >&2
   exit 1
 }
 

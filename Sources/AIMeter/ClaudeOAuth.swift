@@ -14,7 +14,7 @@ enum ClaudeOAuth {
     static let callbackPort: UInt16 = 54545
     static var redirectURI: String { "http://localhost:\(callbackPort)/callback" }
     /// Paste-flow redirect, kept as fallback if the local port is taken.
-    static let pasteRedirectURI = "https://console.anthropic.com/oauth/code/callback"
+    static let pasteRedirectURI = "https://platform.claude.com/oauth/code/callback"
     static let scopes = "org:create_api_key user:profile user:inference"
 
     struct PendingLogin {

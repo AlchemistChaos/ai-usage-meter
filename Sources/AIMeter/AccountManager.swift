@@ -494,7 +494,10 @@ final class AccountManager: ObservableObject {
     func reconnect(_ account: Account) {
         switch account.provider {
         case .claude:
-            beginClaudeLogin(browser: preferredReconnectBrowser, loginHint: account.email)
+            beginClaudeLogin(
+                browser: preferredReconnectBrowser,
+                loginHint: account.email,
+                pasteCode: true)
         case .codex: beginCodexLogin()
         }
         reconnectTargetEmail[account.provider] = account.email
@@ -503,14 +506,24 @@ final class AccountManager: ObservableObject {
     /// Open the chosen browser on Claude's OAuth consent page — the same flow
     /// as `claude login`: a localhost listener catches the redirect
     /// automatically. If the port is taken we fall back to the paste variant.
-    func beginClaudeLogin(browser: Browser? = nil, loginHint: String? = nil) {
+    /// `pasteCode` forces the paste variant and copies the link: the approval
+    /// may then happen in any browser window, and claude.ai shows the result
+    /// (a code or an error) on the page instead of a redirect that can be lost.
+    func beginClaudeLogin(
+        browser: Browser? = nil,
+        loginHint: String? = nil,
+        pasteCode: Bool = false
+    ) {
         reconnectTargetEmail[.claude] = nil
         callbackServer?.stop()
-        logClaudeLogin("begin browser=\(browser?.name ?? "default")")
-        callbackServer = ClaudeOAuth.CallbackServer { [weak self] code, state in
-            Task { @MainActor in
-                self?.logClaudeLogin("callback received state_empty=\(state.isEmpty)")
-                self?.completeClaudeLogin(pasted: "\(code)#\(state)")
+        callbackServer = nil
+        logClaudeLogin("begin browser=\(browser?.name ?? "default") paste=\(pasteCode)")
+        if !pasteCode {
+            callbackServer = ClaudeOAuth.CallbackServer { [weak self] code, state in
+                Task { @MainActor in
+                    self?.logClaudeLogin("callback received state_empty=\(state.isEmpty)")
+                    self?.completeClaudeLogin(pasted: "\(code)#\(state)")
+                }
             }
         }
         let login = ClaudeOAuth.begin(
@@ -518,6 +531,10 @@ final class AccountManager: ObservableObject {
             loginHint: loginHint)
         logClaudeLogin("pending uses_callback=\(login.usesCallback)")
         pendingClaudeLogin = login
+        if pasteCode {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(login.url.absoluteString, forType: .string)
+        }
         if let browser {
             NSWorkspace.shared.open(
                 [login.url], withApplicationAt: browser.appURL,

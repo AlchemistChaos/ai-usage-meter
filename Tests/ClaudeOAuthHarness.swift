@@ -56,6 +56,17 @@ enum ClaudeOAuthHarness {
             exit(1)
         }
 
+        // Copy-code sign-in: after Approve, claude.ai shows a code to paste
+        // instead of redirecting to localhost, so it works from any browser
+        // window. Same manual redirect Claude Code 2.1.284 uses.
+        let paste = ClaudeOAuth.begin(usesCallback: false, loginHint: "the@chaos.one")
+        guard query(paste.url)["redirect_uri"] == "https://platform.claude.com/oauth/code/callback",
+              query(paste.url)["code"] == "true",
+              query(paste.url)["login_hint"] == "the@chaos.one" else {
+            fputs("FAIL: copy-code sign-in URL is wrong: \(paste.url)\n", stderr)
+            exit(1)
+        }
+
         print("PASS: app-owned Claude OAuth refresh protocol")
     }
 }

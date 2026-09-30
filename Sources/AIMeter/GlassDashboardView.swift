@@ -628,7 +628,18 @@ private struct DashboardTransientStatus: View {
                             .buttonStyle(.plain)
                     }
                 } else {
+                    Text("Sign-in link copied. If Chrome opened the wrong account, paste the link into the window signed into the right one. After Approve, copy the code shown and paste it here.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
+                        Button("Paste code") {
+                            let code = (NSPasteboard.general.string(forType: .string) ?? "")
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !code.isEmpty, !code.hasPrefix("http") else { return }
+                            manager.completeClaudeLogin(pasted: code)
+                        }
+                        .help("Use the code you copied from the Anthropic page")
                         TextField("code#state", text: $loginCode)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(size: 10, design: .monospaced))
